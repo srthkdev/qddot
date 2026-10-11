@@ -28,5 +28,7 @@ class Controller:
         dq = jac.T @ np.linalg.solve(jac @ jac.T + 0.015**2 * np.eye(3), error)
         q = self.data.qpos[self.qpos_ids]
         limits = np.array([self.model.jnt_range[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, n)] for n in self.joint_names])
-        command = np.clip(q + 0.55 * dq, limits[:, 0] + 0.02, limits[:, 1] - 0.02)
+        # Leave enough clearance for position-actuator tracking overshoot so the
+        # simulated joint never enters the runner's 1% limit-warning zone.
+        command = np.clip(q + 0.55 * dq, limits[:, 0] + 0.20, limits[:, 1] - 0.20)
         return dict(zip(self.actuators, command.tolist()))

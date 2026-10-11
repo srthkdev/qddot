@@ -49,9 +49,21 @@ def test_run_pass_and_failure_exit_codes_and_json(monkeypatch, tmp_path: Path) -
 def test_perturb_parse_error_is_usage_error(monkeypatch, tmp_path: Path) -> None:
     task, controller = _files(tmp_path)
     _install_task(monkeypatch)
-    result = runner.invoke(app, ["run", str(task), "--controller", str(controller), "--perturb", "bad"])
+    result = runner.invoke(app, ["run", str(task), "--controller", str(controller), "--perturb", "bad", "--json"])
     assert result.exit_code == 2
-    assert "key=value" in result.output
+    assert json.loads(result.stdout) == {"error": "perturbation 'bad' must use key=value", "kind": "ValueError"}
+
+
+def test_plain_output_preserves_markup_brackets_and_long_paths(monkeypatch, tmp_path: Path) -> None:
+    task, controller = _files(tmp_path)
+    _install_task(monkeypatch)
+    long_path = tmp_path / ("folder[" + "x" * 150 + "]")
+    verdict = {"task": "fake", "episode": "ep", "passed": True, "robustness": 1.0, "specs": []}
+    _module(monkeypatch, "qddot.sim.runner", run_episode=lambda *a, **k: SimpleNamespace(verdict=verdict, episode_dir=long_path))
+    result = runner.invoke(app, ["run", str(task), "--controller", str(controller)])
+    assert result.exit_code == 0, result.output
+    assert str(long_path) in result.output
+    assert "[bold" not in result.output
 
 
 def test_fuzz_reports_summary_and_failure_exit(monkeypatch, tmp_path: Path) -> None:
@@ -90,3 +102,6 @@ def test_query_json_and_sql_error_help(tmp_path: Path) -> None:
     assert broken.exit_code == 2
     assert "Available views and columns" in broken.output
     assert "signals(" in broken.output
+    broken_json = runner.invoke(app, ["query", "select * from missing_view", "--root", str(tmp_path), "--json"])
+    assert broken_json.exit_code == 2
+    assert set(json.loads(broken_json.stdout)) == {"error", "kind"}

@@ -31,16 +31,44 @@ def _atom(node: Node) -> str:
     # Most task specs compare one signal with a constant; phrase these naturally.
     if left.op == "signal" and right.op == "constant":
         signal, value = str(left.value), _number(float(right.value))
+        indicator = _indicator(signal, comp or "<", float(right.value))
+        if indicator:
+            return indicator
         phrase = {"<": f"{signal} becomes less than {value}", "<=": f"{signal} becomes at most {value}", ">": f"{signal} becomes greater than {value}", ">=": f"{signal} becomes at least {value}", "==": f"{signal} equals {value}"}[comp or "<"]
         return phrase
     phrase = {"<": "is less than", "<=": "is at most", ">": "is greater than", ">=": "is at least", "==": "equals"}[comp or "<"]
     return f"{_expr(left)} {phrase} {_expr(right)}"
 
 
+def _indicator(signal: str, comparator: str, value: float) -> str | None:
+    if value < 0.5:
+        return None
+    if signal.startswith("ev.") and comparator in {">", ">="}:
+        label = signal[3:].replace("_", " ")
+        return f"a {label} is hit"
+    if signal.startswith("col_"):
+        label = signal[4:].replace("_", " ")
+        if comparator in {"<", "<="}:
+            return f"no {label} collision occurs"
+        if comparator in {">", ">="}:
+            return f"a {label} collision occurs"
+    return None
+
+
 def _render(node: Node) -> str:
     if node.op == "compare":
         return _atom(node)
     if node.op == "not":
+        child = node.left
+        if child is not None and child.op == "eventually" and child.left is not None:
+            proposition = child.left
+            if proposition.op == "compare" and proposition.expr and proposition.expr.left:
+                expr = proposition.expr.left
+                if expr.op == "signal" and str(expr.value).startswith("ev."):
+                    return f"no {str(expr.value)[3:].replace('_', ' ')} is ever hit"
+                if expr.op == "signal" and str(expr.value).startswith("col_"):
+                    return f"no {str(expr.value)[4:].replace('_', ' ')} collision ever occurs"
+            return _render(proposition) + " never happens"
         return "it is not the case that " + _render(node.left)  # type: ignore[arg-type]
     if node.op in {"always", "eventually"}:
         child = node.left
@@ -48,6 +76,27 @@ def _render(node: Node) -> str:
         duration = node.bound[1] - node.bound[0] if node.bound else None
         prefix = f"within {_number(node.bound[1])} s, " if node.op == "eventually" and node.bound else ""
         if node.op == "always":
+            if child.op == "compare" and node.bound is None:
+                phrase = _atom(child)
+                if phrase.startswith(("a ", "no ")):
+                    return phrase + " for the whole run"
+                atom = child
+                assert atom.expr is not None and atom.expr.left is not None and atom.expr.right is not None
+                lhs, rhs = atom.expr.left, atom.expr.right
+                if lhs.op == "signal" and rhs.op == "constant" and atom.comparator in {"<", "<=", ">", ">="}:
+                    signal = str(lhs.value)
+                    value = _number(float(rhs.value))
+                    return f"{signal} stays {'below' if atom.comparator in {'<', '<='} else 'above'} {value} for the whole run"
+            if node.bound is not None:
+                if child.op == "compare":
+                    atom = child
+                    assert atom.expr is not None and atom.expr.left is not None and atom.expr.right is not None
+                    lhs, rhs = atom.expr.left, atom.expr.right
+                    if lhs.op == "signal" and rhs.op == "constant" and atom.comparator in {"<", "<=", ">", ">="}:
+                        direction = "below" if atom.comparator in {"<", "<="} else "above"
+                        return (f"from {_number(node.bound[0])} s to {_number(node.bound[1])} s, "
+                                f"{lhs.value} stays {direction} {_number(float(rhs.value))}")
+                return f"from {_number(node.bound[0])} s to {_number(node.bound[1])} s, {_render(child)}"
             if child.op == "compare" and duration is not None:
                 return f"{_render(child)} and then stays {('below' if child.comparator in {'<', '<='} else 'above' if child.comparator in {'>', '>='} else 'at')} its threshold for {_number(duration)} s"
             if duration is not None:

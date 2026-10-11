@@ -172,6 +172,13 @@ Event kinds:
 - **`controller_error`:** the controller raised.
 
 Events are emitted on **state change**, not every step, to keep tables small.
+Contact absence is debounced: a contact must be absent for two consecutive physics
+steps before `contact_end` is emitted. When controller computation exceeds its
+budget, the new command is queued for `ceil(compute_time / control_dt)` control
+steps later; the previous command remains applied until then. This gives a late
+command a physical effect while preserving the measured controller output. A
+scalar `controller_budget_ms` in a task is active on nominal runs; an explicit
+`controller_budget_ms=null` disables it.
 
 `verdict.json`:
 
@@ -192,6 +199,8 @@ Events are emitted on **state change**, not every step, to keep tables small.
 ```
 
 `passed` = all specs passed and no errors. `robustness` = min over specs.
+`first_violation.spec` is the first failing spec in task declaration order;
+its `t` is that spec's witness time.
 
 ### 5. Spec package API (`qddot.spec`)
 
@@ -370,3 +379,12 @@ Writes `<episode>/replay.gif`, rendered with Pillow at ~20 fps, plus `replay.htm
 
 - `python -m bench run --agents claude_code:sonnet-5.5,codex:gpt-6-luna --conditions none,qddot --tasks all --seeds 1 --dry-run`
 - `--dry-run` prints the planned grid and a cost estimate placeholder. Nothing calls real agents unless `--yes` is given.
+
+### Runner hooks for re-simulation (added by the orchestrator)
+
+`run_episode(..., on_step=None, compute_ms_override=None)`:
+
+- **`on_step(control_index, t, model, data)`:** called once with index -1 after the initial state, then after each control step.
+- **`meta.json["compute_ms"]`:** stores the measured controller compute time per control step.
+- **`compute_ms_override`:** for exact re-simulation (`replay`, `view`, keyframes), pass `compute_ms_override=meta["compute_ms"]`. It reproduces the recorded deadline effects instead of re-measuring wall time.
+- **Output location:** re-simulation should write to a temporary root, so the original episode is not overwritten.

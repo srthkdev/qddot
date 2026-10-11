@@ -1,0 +1,6 @@
+buggy_velocity_sign:
+  first_failing_spec: upright_and_hold
+  must_events: [saturation, joint_limit]
+buggy_slow:
+  first_failing_spec: upright_and_hold
+  must_events: [deadline_miss, saturation]

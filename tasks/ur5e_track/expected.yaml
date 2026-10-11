@@ -1,0 +1,6 @@
+buggy_joint_order:
+  first_failing_spec: pan_settle
+  must_events: [collision]
+buggy_degrees:
+  first_failing_spec: pan_settle
+  must_events: []

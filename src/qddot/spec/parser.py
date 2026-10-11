@@ -9,7 +9,7 @@ from .ast import Expr, Node
 
 _TOKEN = re.compile(
     r"\s*(?:(?P<number>(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)|"
-    r"(?P<name>[A-Za-z_][A-Za-z0-9_.]*)|(?P<op><=|>=|==|[()\[\],+*<>-]))"
+    r"(?P<name>[A-Za-z_][A-Za-z0-9_.]*)|(?P<op><=|>=|==|[()\[\],+*/<>-]))"
 )
 
 
@@ -152,8 +152,9 @@ class Parser:
 
     def term(self) -> Expr:
         left = self.factor()
-        while self.accept("*"):
-            left = Expr("mul", left=left, right=self.factor())
+        while self.token.text in {"*", "/"}:
+            op = self.take().text
+            left = Expr("mul" if op == "*" else "div", left=left, right=self.factor())
         return left
 
     def factor(self) -> Expr:
@@ -166,10 +167,14 @@ class Parser:
             child = self.arithmetic()
             self.take(")")
             return Expr("abs", left=child)
+        if self.accept("("):
+            child = self.arithmetic()
+            self.take(")")
+            return child
         if self.token.kind == "number":
             return Expr("constant", float(self.take().text))
         if self.token.kind == "name" and self.token.text.lower() not in {"and", "or", "not", "implies", "until", "always", "eventually"}:
             token = self.take()
             return Expr("signal", token.text, pos=token.pos)
-        self.error("Expected a signal, number, or abs(expression)")
+        self.error("Expected a signal, number, or parenthesized arithmetic expression")
         raise AssertionError

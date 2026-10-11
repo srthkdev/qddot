@@ -35,6 +35,7 @@ def _expr(expr: Expr, signals: Mapping[str, np.ndarray], source: str, size: int)
         if name not in signals:
             suggestions = get_close_matches(name, list(signals), n=3, cutoff=0.45)
             suffix = f". Did you mean {', '.join(suggestions)}?" if suggestions else ""
+            suffix += f" Available signals: {', '.join(list(signals)[:10])}."
             raise SpecError(f"Unknown signal {name!r}{suffix}", source, (expr.pos or 0) + 1)
         return np.asarray(signals[name], dtype=np.float64)
     assert expr.left is not None
@@ -51,6 +52,8 @@ def _expr(expr: Expr, signals: Mapping[str, np.ndarray], source: str, size: int)
         return left - right
     if expr.op == "mul":
         return left * right
+    if expr.op == "div":
+        return left / right
     raise ValueError(f"Unknown arithmetic operator: {expr.op}")
 
 

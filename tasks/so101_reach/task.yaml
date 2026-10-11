@@ -10,7 +10,7 @@ signals:
   - {name: ee_z, kind: site_pos, ref: gripperframe, axis: z}
   - {name: dist_ee_target, kind: distance, ref: gripperframe, to: target}
 contact_pairs:
-  - {name: arm_floor, a: [shoulder, upper_arm, lower_arm, wrist, gripper], b: [world]}
+  - {name: arm_floor, a: [shoulder, upper_arm, lower_arm, wrist, gripper], b: [floor]}
 perturb:
   friction_scale: [0.8, 1.2]
   mass_scale: [0.95, 1.05]

@@ -9,6 +9,12 @@ target:
   shoulder_pan_joint: -1.20
   shoulder_lift_joint: -1.35
   elbow_joint: 1.25
+perturb:
+  friction_scale: [0.9, 1.1]
+  mass_scale: [0.95, 1.05]
+  obs_noise_std: 0.001
+  latency_ms: [0, 20]
+  jitter_ms: 2
 specs:
   - name: pan_settle
     stl: "eventually[2,3](always[0,1](abs(joint.shoulder_pan_joint.pos - (-1.20)) < 0.04))"

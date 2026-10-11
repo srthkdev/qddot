@@ -34,6 +34,23 @@ def test_unknown_signal_has_suggestion() -> None:
         evaluate("joint.elbow.pso > 0", np.array([0.0]), {"joint.elbow.pos": np.array([1.0])})
 
 
+def test_unknown_signal_without_close_match_lists_available_names() -> None:
+    names = {f"signal_{index}": np.array([0.0]) for index in range(12)}
+    with pytest.raises(SpecError) as error:
+        evaluate("zzz > 0", np.array([0.0]), names)
+    assert "Available signals:" in str(error.value)
+    assert "signal_0" in str(error.value)
+    assert "signal_9" in str(error.value)
+    assert "signal_10" not in str(error.value)
+
+
+def test_parenthesized_unary_and_division_arithmetic() -> None:
+    times = np.array([0.0, 1.0])
+    result = evaluate("abs((x - (-2)) / 2) < 1", times, {"x": np.array([-2.5, -2.0])})
+    assert result.robustness == pytest.approx(0.75)
+    assert result.witness_t == 0.0
+
+
 @pytest.mark.parametrize(
     ("formula", "expected"),
     [
@@ -79,7 +96,10 @@ def test_english_nested_example_and_generic() -> None:
     assert to_english("eventually[0,2.5](always[0,1](dist_ee_target < 0.02))") == (
         "within 2.5 s, dist_ee_target becomes less than 0.02 and then stays below it for 1 s"
     )
-    assert "stays above" in to_english("always[0,1](x > 2)")
+    assert to_english("always[0,1](x > 2)") == "from 0 s to 1 s, x stays above 2"
+    assert to_english("always(x < 3)") == "x stays below 3 for the whole run"
+    assert to_english("not eventually(ev.joint_limit > 0.5)") == "no joint limit is ever hit"
+    assert to_english("always(col_arm_table < 0.5)") == "no arm table collision occurs for the whole run"
 
 
 def test_evaluate_specs_shape() -> None:

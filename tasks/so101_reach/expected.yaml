@@ -1,0 +1,6 @@
+buggy_jacobian_sign:
+  first_failing_spec: reach_and_hold
+  must_events: [saturation, collision]
+buggy_limit_avoidance:
+  first_failing_spec: no_joint_limit
+  must_events: [joint_limit]

@@ -10,6 +10,7 @@ import time
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import mujoco
@@ -30,12 +31,27 @@ class EpisodeResult:
 
 def run_episode(task: Task, controller_path: Path, seed: int = 0,
                 perturb: dict[str, Any] | None = None, root: Path = Path(".qddot"),
-                record_mcap: bool = True) -> EpisodeResult:
-    """Run one deterministic episode and write its artifacts."""
+                record_mcap: bool = True,
+                on_step: Callable[[int, float, mujoco.MjModel, mujoco.MjData], None] | None = None,
+                compute_ms_override: Sequence[float] | None = None) -> EpisodeResult:
+    """Run one deterministic episode and write its artifacts.
+
+    ``on_step(control_index, t, model, data)`` is called after the initial state
+    (index -1) and after every control step, for re-simulation tools (frames,
+    replay). ``compute_ms_override`` replays recorded controller compute times so
+    deadline effects are reproduced exactly instead of re-measured.
+    """
     started = time.perf_counter()
     controller_path = Path(controller_path).resolve()
     root = Path(root)
     params = resolve(perturb)
+    # A scalar task budget is an execution constraint, not a sampled physics
+    # perturbation, so it remains active for nominal and partially specified runs.
+    if (params["controller_budget_ms"] is None
+            and (perturb is None or "controller_budget_ms" not in perturb)):
+        task_budget = task.perturb.get("controller_budget_ms")
+        if task_budget is not None and not isinstance(task_budget, (list, tuple)):
+            params["controller_budget_ms"] = float(task_budget)
     params_json = json.dumps(params, sort_keys=True, separators=(",", ":"))
     param_hash = hashlib.sha256(params_json.encode()).hexdigest()[:6]
     episode_id = f"{task.name}-{controller_path.stem}-s{seed}-{param_hash}"
@@ -78,6 +94,9 @@ def run_episode(task: Task, controller_path: Path, seed: int = 0,
     last_ctrl = initial_ctrl.copy()
     action_queue: list[tuple[int, np.ndarray]] = []
     physics_count = 0
+    compute_log: list[float] = []
+    if on_step is not None:
+        on_step(-1, 0.0, model, data)
 
     for control_index in range(control_steps):
         detector.begin_control_step()
@@ -98,9 +117,14 @@ def run_episode(task: Task, controller_path: Path, seed: int = 0,
                          detail={"traceback": errors[-1]})
             break
         compute_ms = (time.perf_counter() - call_started) * 1000.0
-        if budget is not None and compute_ms > float(budget):
-            detector.add(control_index * task.control_dt, "deadline_miss", controller_path.name,
-                         value=compute_ms)
+        if compute_ms_override is not None and control_index < len(compute_ms_override):
+            compute_ms = float(compute_ms_override[control_index])
+        compute_log.append(compute_ms)
+        missed_deadline = budget is not None and compute_ms > float(budget)
+        if missed_deadline:
+            detector.deadline_miss(control_index * task.control_dt, controller_path.name, compute_ms)
+        else:
+            detector.deadline_met()
 
         proposed = last_ctrl.copy()
         for name, value in output.items():
@@ -117,7 +141,9 @@ def run_episode(task: Task, controller_path: Path, seed: int = 0,
             proposed[aid] = clipped
         last_ctrl = proposed
         jitter = round(float(rng.normal(0.0, jitter_std_steps))) if jitter_std_steps else 0
-        action_queue.append((physics_count + max(0, jitter), proposed.copy()))
+        late_steps = (int(np.ceil(compute_ms / (task.control_dt * 1000.0)))
+                      if missed_deadline else 0)
+        action_queue.append((physics_count + (late_steps * substeps) + max(0, jitter), proposed.copy()))
         action_queue.sort(key=lambda item: item[0])
 
         for substep in range(substeps):
@@ -136,6 +162,8 @@ def run_episode(task: Task, controller_path: Path, seed: int = 0,
             break
         _record_state(signal_rows, obs_history, model, data, task, detector,
                       (control_index + 1) * task.control_dt, data.ctrl)
+        if on_step is not None:
+            on_step(control_index, (control_index + 1) * task.control_dt, model, data)
 
     times = np.asarray([row["t"] for row in signal_rows], dtype=np.float64)
     signal_arrays = {name: np.asarray([row[name] for row in signal_rows], dtype=np.float64)
@@ -153,7 +181,9 @@ def run_episode(task: Task, controller_path: Path, seed: int = 0,
     violations = [spec for spec in spec_results if not spec.get("passed", True)]
     first_violation = None
     if violations:
-        critical = min(violations, key=lambda item: float(item.get("witness_t") or 0.0))
+        # Task specs are ordered by diagnostic priority; preserve that ordering
+        # when naming the first failing spec in a verdict.
+        critical = violations[0]
         first_violation = {"spec": critical.get("name"), "t": critical.get("witness_t")}
     event_summary: dict[str, int] = {}
     for event in detector.emitted:
@@ -172,7 +202,8 @@ def run_episode(task: Task, controller_path: Path, seed: int = 0,
     }
     meta = {"task_path": str(task.path), "controller_path": str(controller_path),
             "controller_sha256": _sha256(controller_path), "seed": seed,
-            "perturb": params, "env": verdict["env"]}
+            "perturb": params, "env": verdict["env"],
+            "compute_ms": [round(v, 6) for v in compute_log]}
     write_episode(episode_dir, signal_rows, detector.emitted, verdict, meta, record_mcap)
     return EpisodeResult(episode_dir=episode_dir, verdict=verdict)
 
