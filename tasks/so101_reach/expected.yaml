@@ -1,6 +1,14 @@
 buggy_jacobian_sign:
   first_failing_spec: reach_and_hold
-  must_events: [saturation, collision]
+  must_events:
+  - saturation
+  - collision
+  cause: sign_frame
 buggy_limit_avoidance:
   first_failing_spec: no_joint_limit
-  must_events: [joint_limit]
+  must_events:
+  - joint_limit
+  cause: limit_guard
+cause_rules:
+  sign_frame: divergence
+  limit_guard: joint_limit

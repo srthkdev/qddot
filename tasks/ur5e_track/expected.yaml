@@ -1,6 +1,12 @@
 buggy_joint_order:
   first_failing_spec: pan_settle
-  must_events: [collision]
+  must_events:
+  - collision
+  cause: mapping_error
 buggy_degrees:
   first_failing_spec: pan_settle
   must_events: []
+  cause: unit_scale
+cause_rules:
+  mapping_error: mapping
+  unit_scale: unit_scale

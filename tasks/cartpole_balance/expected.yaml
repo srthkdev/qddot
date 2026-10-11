@@ -1,6 +1,16 @@
 buggy_velocity_sign:
   first_failing_spec: upright_and_hold
-  must_events: [saturation, joint_limit]
+  must_events:
+  - saturation
+  - joint_limit
+  cause: sign_frame
 buggy_slow:
   first_failing_spec: upright_and_hold
-  must_events: [deadline_miss, saturation]
+  must_events:
+  - deadline_miss
+  - saturation
+  cause: deadline
+cause_rules:
+  sign_frame: divergence
+  deadline: deadline
+  limit_guard: joint_limit

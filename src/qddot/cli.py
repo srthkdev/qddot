@@ -11,6 +11,12 @@ COMMANDS = [
     "qddot.commands.spec",
     "qddot.commands.query",
     "qddot.commands.runs",
+    "qddot.commands.skill",
+    "qddot.commands.mcp",
+    "qddot.commands.view",
+    "qddot.commands.why",
+    "qddot.commands.diff",
+    "qddot.commands.replay",
 ]
 
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_enable=False)

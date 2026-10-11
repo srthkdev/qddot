@@ -1,0 +1,14 @@
+fixed_model: model_fixed.xml
+buggy_gravity:
+  first_failing_spec: target_reached
+  must_events: [saturation]
+  cause: missing_compensation
+  fuzz_max_pass_rate: 0.6
+buggy_joint_order:
+  first_failing_spec: target_reached
+  must_events: [saturation]
+  cause: wrong_mapping
+model_variants:
+  models/buggy_inertia.xml: {passed: false, check_errors: 0}
+  models/buggy_axis.xml: {passed: false, check_errors: 0}
+  models/buggy_unlimited.xml: {passed: true, check_errors: 0}

@@ -28,6 +28,7 @@ class Task:
     contact_pairs: list[dict[str, Any]] = field(default_factory=list)
     perturb: dict[str, Any] = field(default_factory=dict)
     specs: list[dict[str, Any]] = field(default_factory=list)
+    editable_model: bool = False
 
 
 def load_task(path: str | Path) -> Task:
@@ -48,6 +49,8 @@ def load_task(path: str | Path) -> Task:
         raise TaskError("name must be a non-empty string")
     if not isinstance(raw["model"], str) or not raw["model"].strip():
         raise TaskError("model must be a non-empty path")
+    if "editable_model" in raw and not isinstance(raw["editable_model"], bool):
+        raise TaskError("editable_model must be a boolean")
     duration = _positive_number(raw["duration"], "duration")
     control_dt = _positive_number(raw["control_dt"], "control_dt")
     model_path = (task_path.parent / raw["model"]).resolve()
@@ -78,6 +81,7 @@ def load_task(path: str | Path) -> Task:
         model_path=model_path, init=raw.get("init", {}), target=raw.get("target", {}),
         signals=raw.get("signals", []), contact_pairs=raw.get("contact_pairs", []),
         perturb=raw.get("perturb", {}), specs=raw.get("specs", []),
+        editable_model=raw.get("editable_model", False),
     )
 
 

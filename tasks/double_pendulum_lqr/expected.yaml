@@ -1,0 +1,8 @@
+buggy_wrong_equilibrium:
+  first_failing_spec: capture_upright
+  must_events: [joint_limit]
+  cause: wrong_equilibrium
+buggy_mapping:
+  first_failing_spec: capture_upright
+  must_events: [saturation]
+  cause: wrong_mapping

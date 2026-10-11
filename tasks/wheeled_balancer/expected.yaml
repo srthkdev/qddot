@@ -1,0 +1,8 @@
+buggy_gain_instability:
+  first_failing_spec: balance
+  must_events: [saturation]
+  cause: gain_instability
+buggy_mapping:
+  first_failing_spec: reach_and_stop
+  must_events: [saturation]
+  cause: wrong_mapping

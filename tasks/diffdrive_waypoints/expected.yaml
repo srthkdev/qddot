@@ -1,0 +1,8 @@
+buggy_atan2:
+  first_failing_spec: waypoint_one
+  must_events: [collision]
+  cause: sign_or_frame
+buggy_wrap:
+  first_failing_spec: waypoint_two
+  must_events: [joint_limit]
+  cause: units

@@ -1,0 +1,14 @@
+fixed_model: model_fixed.xml
+buggy_friction_assumption:
+  first_failing_spec: lift_block
+  must_events: [contact_end, slip]
+  cause: lost_contact
+  fuzz_max_pass_rate: 0.5
+buggy_finger_mapping:
+  first_failing_spec: lift_block
+  must_events: [contact_end]
+  cause: wrong_mapping
+model_variants:
+  models/buggy_friction.xml: {passed: false, check_errors: 0}
+  models/buggy_range.xml: {passed: false, check_errors: 0}
+  models/buggy_gear.xml: {passed: false, check_errors: 0}
