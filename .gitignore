@@ -1,6 +1,6 @@
 .venv/
 __pycache__/
-.simcheck/
+.qddot/
 *.pyc
 .ruff_cache/
 .pytest_cache/

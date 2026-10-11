@@ -1,12 +1,12 @@
-# simcheck — engineering contract (read fully before coding)
+# qddot — engineering contract (read fully before coding)
 
-simcheck lets a coding agent **run, check and debug robot code in physics** before claiming it is done.
+qddot lets a coding agent **run, check and debug robot code in physics** before claiming it is done.
 
-- **Delivery:** one Python package that is a library and a CLI (`simcheck ...`).
+- **Delivery:** one Python package that is a library and a CLI (`qddot ...`).
 - **No servers:**
   - MuJoCo runs in-process.
   - DuckDB is embedded.
-  - All data lives in `.simcheck/` inside the user's project.
+  - All data lives in `.qddot/` inside the user's project.
 
 ## Rules for every contributor
 
@@ -40,7 +40,7 @@ simcheck lets a coding agent **run, check and debug robot code in physics** befo
 ## Layout
 
 ```
-src/simcheck/
+src/qddot/
   __init__.py          (orchestrator)
   task.py              Task model + YAML loader                [runner agent]
   sim/runner.py        run_episode()                           [runner agent]
@@ -50,8 +50,8 @@ src/simcheck/
   record/writer.py     Parquet + MCAP + verdict writers         [runner agent]
   spec/                STL parser, evaluator, robustness, english  [spec agent]
   check/static.py      check_model()                           [cli agent]
-  store.py             DuckDB views over .simcheck/runs         [cli agent]
-  cli.py               Typer app, entry point `simcheck`        [cli agent]
+  store.py             DuckDB views over .qddot/runs         [cli agent]
+  cli.py               Typer app, entry point `qddot`        [cli agent]
 tasks/<task_name>/     built-in benchmark tasks                 [tasks agent]
 assets/                vendored MuJoCo Menagerie models (SO-101, UR5e). Read-only.
 tests/                 tests/<module>/test_*.py
@@ -137,7 +137,7 @@ class Controller:
 
 Controller exceptions are caught: the episode stops, `verdict.errors` records the traceback (last 20 lines), and `passed=False`.
 
-### 4. Episode outputs: `.simcheck/runs/<episode_id>/`
+### 4. Episode outputs: `.qddot/runs/<episode_id>/`
 
 `episode_id` = `<task>-<controller_stem>-s<seed>-<6 hex of params hash>`.
 
@@ -186,14 +186,14 @@ Events are emitted on **state change**, not every step, to keep tables small.
   "events_summary": {"contact_start": 3, "slip": 1},
   "errors": [],
   "perturb": {...},
-  "env": {"mujoco": "3.15.0", "python": "3.12.x", "platform": "macOS-arm64", "simcheck": "0.1.0"},
+  "env": {"mujoco": "3.15.0", "python": "3.12.x", "platform": "macOS-arm64", "qddot": "0.1.0"},
   "stats": {"control_steps": 200, "physics_steps": 1000, "wall_s": 0.21}
 }
 ```
 
 `passed` = all specs passed and no errors. `robustness` = min over specs.
 
-### 5. Spec package API (`simcheck.spec`)
+### 5. Spec package API (`qddot.spec`)
 
 - `parse(stl: str) -> Node`: raises `SpecError` with position info.
 - `to_english(stl: str) -> str`: deterministic, template-based back-translation.
@@ -215,14 +215,14 @@ Quantitative semantics are the standard STL robustness (Donzé–Maler); bounded
 
 ### 6. Other APIs
 
-- `simcheck.sim.runner.run_episode(task: Task, controller_path: Path, seed: int = 0, perturb: dict | None = None, root: Path = Path(".simcheck"), record_mcap: bool = True) -> EpisodeResult`, where `EpisodeResult` has `episode_dir: Path` and `verdict: dict`.
+- `qddot.sim.runner.run_episode(task: Task, controller_path: Path, seed: int = 0, perturb: dict | None = None, root: Path = Path(".qddot"), record_mcap: bool = True) -> EpisodeResult`, where `EpisodeResult` has `episode_dir: Path` and `verdict: dict`.
   - `perturb=None` means nominal (no perturbation).
   - A dict holds explicit sampled values, e.g. `{"friction_scale": 0.8, "mass_scale": 1.0, "obs_noise_std": 0.0, "latency_ms": 20, "jitter_ms": 0, "controller_budget_ms": null}`.
-- `simcheck.sim.perturb.sample(task: Task, rng) -> dict`: samples concrete values from `task.perturb` ranges.
-- `simcheck.sim.fuzz.fuzz(task, controller_path, n: int, workers: int = os.cpu_count(), seed: int = 0, root=...) -> dict`.
+- `qddot.sim.perturb.sample(task: Task, rng) -> dict`: samples concrete values from `task.perturb` ranges.
+- `qddot.sim.fuzz.fuzz(task, controller_path, n: int, workers: int = os.cpu_count(), seed: int = 0, root=...) -> dict`.
   - Uses a process pool; episode i uses seed `seed + i` and `sample(task, default_rng(seed + i))`.
   - Returns `{"n", "passed", "pass_rate", "worst": [top 5 by robustness with episode ids + perturb], "by_param": {param: {"pass_corr": float}}}`.
-- `simcheck.check.static.check_model(path) -> list[dict]`. Each dict is `{severity: error|warning|info, code, message, element}`. Checks:
+- `qddot.check.static.check_model(path) -> list[dict]`. Each dict is `{severity: error|warning|info, code, message, element}`. Checks:
   - load errors
   - bodies with mass ≤ 1e-6 or invalid inertia (triangle inequality)
   - hinge/slide joints that are actuated but unlimited
@@ -231,12 +231,12 @@ Quantitative semantics are the standard STL robustness (Donzé–Maler); bounded
   - timestep > 0.01
   - geoms with zero size
   - free bodies starting in the air (info)
-- `simcheck.store.connect(root=Path(".simcheck")) -> duckdb.DuckDBPyConnection` with views:
+- `qddot.store.connect(root=Path(".qddot")) -> duckdb.DuckDBPyConnection` with views:
   - `signals`: all episodes, plus an `episode` column
   - `events`: all episodes, plus an `episode` column
   - `verdicts`: one row per episode, with flattened top-level fields and `specs` as JSON
 
-## CLI (Typer, `simcheck`)
+## CLI (Typer, `qddot`)
 
 | Command | Does |
 |---|---|

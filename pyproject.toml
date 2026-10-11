@@ -1,7 +1,7 @@
 [project]
-name = "simcheck"
+name = "qddot"
 version = "0.1.0"
-description = "Add your description here"
+description = "Run, check and debug robot code in physics before your agent claims it is done."
 readme = "README.md"
 authors = [
     { name = "srthkdev", email = "23f3000839@ds.study.iitm.ac.in" }
@@ -31,7 +31,7 @@ dev = [
 ]
 
 [project.scripts]
-simcheck = "simcheck.cli:app"
+qddot = "qddot.cli:app"
 
 [tool.ruff]
 line-length = 100

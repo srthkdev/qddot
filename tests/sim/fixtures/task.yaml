@@ -1,0 +1,12 @@
+name: runner_fixture
+description: Tiny deterministic runner model.
+model: pendulum.xml
+duration: 0.2
+control_dt: 0.02
+target: {x: 0.0, y: 0.0, z: 0.0}
+signals:
+  - {name: pendulum_x, kind: body_pos, ref: pendulum, axis: x}
+contact_pairs:
+  - {name: payload_floor, a: [payload], b: [floorbody]}
+specs:
+  - {name: stable, stl: "always(joint.hinge.pos < 1.0)"}
