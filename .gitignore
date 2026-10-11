@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+.simcheck/
+*.pyc
+.ruff_cache/
+.pytest_cache/
+logs/
