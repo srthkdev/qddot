@@ -1,0 +1,20 @@
+name: ur5e_track
+description: Track a smooth three-joint move and settle at the requested pose.
+model: ../../assets/universal_robots_ur5e/scene.xml
+duration: 4.0
+control_dt: 0.02
+init:
+  keyframe: home
+target:
+  shoulder_pan_joint: -1.20
+  shoulder_lift_joint: -1.35
+  elbow_joint: 1.25
+specs:
+  - name: pan_settle
+    stl: "eventually[2,3](always[0,1](abs(joint.shoulder_pan_joint.pos - (-1.20)) < 0.04))"
+  - name: lift_settle
+    stl: "eventually[2,3](always[0,1](abs(joint.shoulder_lift_joint.pos - (-1.35)) < 0.04))"
+  - name: elbow_settle
+    stl: "eventually[2,3](always[0,1](abs(joint.elbow_joint.pos - 1.25) < 0.04))"
+  - name: no_tracking_overshoot
+    stl: "always[2,4](joint.shoulder_pan_joint.pos < -1.10)"

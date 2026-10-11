@@ -248,3 +248,125 @@ Quantitative semantics are the standard STL robustness (Donzé–Maler); bounded
 | `runs [--last 10]` | Lists recent episodes |
 
 Phase 2 commands (`why`, `diff`, `replay`, `view`, `similar`) are not in scope yet. Leave clean extension points.
+
+## Phase 2 contract
+
+### CLI structure (after the fix-up refactor)
+
+- `src/qddot/cli.py` only builds the Typer app and registers commands from `src/qddot/commands/<name>.py`.
+- Each command module exposes `register(app: typer.Typer) -> None`.
+- To add a command, create its module and add one import line to the `COMMANDS` list in `cli.py`; nothing else changes.
+- Shared output helpers live in `src/qddot/commands/_out.py`:
+  - plain, non-wrapping output: `rich` with `soft_wrap=True`, `markup=False`, `highlight=False`;
+  - `emit_json`;
+  - exit codes (0 pass, 1 fail, 2 error).
+
+### Diagnosis (`src/qddot/diag/`)
+
+#### `why EPISODE`
+
+`why(episode_dir) -> dict`, printed in ≤ 25 lines.
+
+Contents:
+
+- **Verdict line.**
+- **First failing spec:** its English form, plus the witness time and window.
+- **Spec signals:** for each signal referenced by the failing spec, the value at the witness, the min and max in the window, and the trend over the 1 s before the witness (rising / falling / oscillating / flat).
+- **Nearby events:** events within ±0.5 s of the witness, ranked by proximity, plus first occurrences of saturation / joint_limit / slip / contact_end / deadline_miss before the witness.
+- **"likely causes":** rule-based hypotheses, each with evidence and a confidence of low / med / high. The rules:
+  - saturation preceding the error growth → actuator limit or gains too high;
+  - joint_limit → limit not respected;
+  - error growing monotonically from the start → sign or frame error;
+  - oscillation with growing amplitude → gain too high or instability;
+  - contact_end / slip on the object before failure → lost grip;
+  - deadline_miss → controller too slow;
+  - nan_state → numerical blow-up;
+  - obs latency perturbed and failing only under perturbation → latency sensitivity.
+- **2–3 suggested next commands:** concrete `qddot query` SQL and `replay` lines.
+
+#### Keyframes
+
+`keyframes(episode_dir, times) -> list[Path]` re-simulates deterministically from `meta.json` (same seed and perturb) and renders PNGs with `mujoco.Renderer` (default 320×240, with a fixed camera that looks at the robot). Renders go to `<episode>/keyframes/t_<ms>.png`.
+
+`why --frames` renders frames at witness−0.5 s, the witness, and the end. Each frame comes with a **text visual-diff**:
+
+- body positions that moved more than 1 cm between frames;
+- contacts present or absent.
+
+This gives a text diff, not pixels. An optional `--vlm` hook calls a pluggable function, `qddot.diag.vlm.describe(images) -> str`. It is disabled unless a provider is configured, and is never required.
+
+#### `diff A B`
+
+Reports:
+
+- per-signal first divergence time beyond a tolerance (`1e-6` absolute by default);
+- events only in A / only in B (compared by kind and parties);
+- spec robustness deltas;
+- differences in controller sha256, perturb and seed.
+
+#### `replay EPISODE --at T`
+
+Deterministically re-simulates to T and saves `mj_getState(mjSTATE_INTEGRATION)` to `<episode>/state_<ms>.npy`. It prints the joint positions and velocities and the active contacts at T. `--frame` renders a PNG.
+
+### Integrations
+
+#### Skills
+
+`skills/qddot/SKILL.md` is an agent-facing workflow:
+
+1. Write or confirm the specs; read the English back-translation.
+2. `qddot run`.
+3. On FAIL: `qddot why`, then query and replay, then fix.
+4. `qddot fuzz` must pass at ≥ 90% before claiming done.
+5. Never claim done without a PASS verdict id.
+
+`qddot skill install [--claude|--codex] [--project]` copies the skill to `~/.claude/skills/qddot/`, `~/.codex/skills/qddot/`, or `./.claude/skills/qddot/`.
+
+#### `qddot mcp`
+
+An MCP server (stdio) built with `mcp.server.fastmcp.FastMCP`. Its tools are `run`, `fuzz`, `why`, `diff`, `query`, `spec`, `check`, `replay`. They are thin wrappers around the same library functions and return compact dicts. They never return raw arrays.
+
+#### `qddot view EPISODE`
+
+Writes `<episode>/replay.gif`, rendered with Pillow at ~20 fps, plus `replay.html`. The HTML is a self-contained page showing the GIF, the verdict and an events timeline.
+
+### Benchmark (`bench/`, a separate top-level package that imports qddot)
+
+**Task sets:**
+
+- Public tasks live in `tasks/`.
+- Held-out tasks live in `tasks_private/`, which is gitignored.
+- Each task has a `PROMPT.md`: the user-facing request given to the agent. It contains no hints from `KNOWN_FAILURES.md`.
+- Each task has a `controllers/starter.py` stub.
+
+**Agent adapters** (`bench/agents/*.py`) run a headless CLI inside a fresh temporary workdir with a time and turn budget:
+
+- `claude_code` (`claude -p ... --output-format json`)
+- `codex` (`codex exec --json -m <model>`)
+- `opencode` (`opencode run`)
+- `fake` (a scripted agent for tests)
+
+**The workdir** contains `PROMPT.md`, `task.yaml`, the model files and `controller.py` (copied from the starter). Under no circumstances does it contain `good.py`, the buggy controllers, or `KNOWN_FAILURES.md`.
+
+**Conditions:**
+
+| Condition | The agent gets |
+|---|---|
+| `none` | Cannot execute simulations; a code-only instruction |
+| `stdout` | A `sim.py` that runs nominally and prints only the final distance/angle numbers and "done" |
+| `qddot` | The full CLI + skill |
+| `qddot_memory` | The full CLI + skill, plus `similar` once it exists (optional) |
+
+**Grading** (`bench/grade.py`) runs on the agent's final `controller.py` with qddot outside the agent:
+
+- the nominal run;
+- `fuzz` with hidden seeds (n = 50);
+- control metrics: overshoot, settling time, energy (sum |ctrl·qvel|·dt);
+- **false-done**: the agent claimed success (parsed from its final message), but the hidden grader says it failed.
+
+**Results** are appended to `bench/results/<run_id>.jsonl`. `bench/report.py` aggregates them into markdown tables and matplotlib charts.
+
+**CLI:**
+
+- `python -m bench run --agents claude_code:sonnet-5.5,codex:gpt-6-luna --conditions none,qddot --tasks all --seeds 1 --dry-run`
+- `--dry-run` prints the planned grid and a cost estimate placeholder. Nothing calls real agents unless `--yes` is given.

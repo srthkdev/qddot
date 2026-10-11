@@ -1,0 +1,21 @@
+name: cartpole_balance
+description: Stabilize a slightly tilted pole while keeping the cart centered.
+model: model.xml
+duration: 4.0
+control_dt: 0.01
+init:
+  qpos: {cart: 0.0, pole: 0.1}
+target: {}
+perturb:
+  mass_scale: [0.95, 1.05]
+  obs_noise_std: 0.0005
+  latency_ms: [0, 10]
+  jitter_ms: 1
+  controller_budget_ms: 10
+specs:
+  - name: upright_and_hold
+    stl: "eventually[0,2](always[0,2](abs(joint.pole.pos) < 0.05))"
+  - name: stay_on_rail
+    stl: "always(abs(joint.cart.pos) < 0.8)"
+  - name: avoid_saturation
+    stl: "always[0,4](ev.saturation < 0.5)"

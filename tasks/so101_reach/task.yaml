@@ -1,0 +1,26 @@
+name: so101_reach
+description: Move the gripper frame to a nearby target and hold it.
+model: ../../assets/robotstudio_so101/scene.xml
+duration: 4.0
+control_dt: 0.02
+target: {x: 0.16, y: 0.02, z: 0.20}
+signals:
+  - {name: ee_x, kind: site_pos, ref: gripperframe, axis: x}
+  - {name: ee_y, kind: site_pos, ref: gripperframe, axis: y}
+  - {name: ee_z, kind: site_pos, ref: gripperframe, axis: z}
+  - {name: dist_ee_target, kind: distance, ref: gripperframe, to: target}
+contact_pairs:
+  - {name: arm_floor, a: [shoulder, upper_arm, lower_arm, wrist, gripper], b: [world]}
+perturb:
+  friction_scale: [0.8, 1.2]
+  mass_scale: [0.95, 1.05]
+  obs_noise_std: 0.001
+  latency_ms: [0, 20]
+  jitter_ms: 2
+specs:
+  - name: reach_and_hold
+    stl: "eventually[0,2.5](always[0,1](dist_ee_target < 0.025))"
+  - name: no_joint_limit
+    stl: "always(ev.joint_limit < 0.5)"
+  - name: no_floor_collision
+    stl: "always(col_arm_floor < 0.5)"
