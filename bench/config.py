@@ -27,6 +27,6 @@ class RunPlan:
     agents: list[AgentSpec]
     conditions: list[Condition]
     seeds: list[int]
-    run_id: str = field(default_factory=lambda: datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ"))
+    run_id: str = field(default_factory=lambda: datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ"))
     jobs: int = 1
     private: bool = False

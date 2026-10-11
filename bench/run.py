@@ -42,7 +42,7 @@ def _run_trial(task_dir: Path, agent: AgentSpec, condition: Condition, seed: int
     result = adapter.run_agent(workdir, prompt, agent.model, budget)
     graded = grade(task_dir, workdir / "controller.py", seed + 100_000, int(budget.get("n_fuzz", 50)))
     add_false_done(graded, result.final_message)
-    return {**graded, "agent_result": {"final_message": result.final_message, "transcript_path": str(result.transcript_path), "wall_s": result.wall_s, "tokens_in": result.tokens_in, "tokens_out": result.tokens_out, "cost_usd": result.cost_usd, "exit_code": result.exit_code}, "config": {"task": task_dir.name, "agent": agent.key, "adapter": agent.adapter, "model": agent.model, "extra_args": list(agent.extra_args), "condition": condition.name, "seed": seed}}
+    return {**graded, "agent_result": {"final_message": result.final_message, "transcript_path": str(result.transcript_path), "wall_s": result.wall_s, "tokens_in": result.tokens_in, "tokens_out": result.tokens_out, "cost_usd": result.cost_usd, "exit_code": result.exit_code}, "config": {"task": task_dir.name, "agent": agent.key, "adapter": agent.adapter, "model": agent.model, "extra_args": list(agent.extra_args), "condition": condition.name, "seed": seed, "budget": budget}}
 
 
 def run_plan(plan: RunPlan, repo_root: Path, *, yes: bool = False, dry_run: bool = True, budget: dict | None = None) -> Path | None:

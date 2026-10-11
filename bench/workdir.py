@@ -19,23 +19,32 @@ FORBIDDEN = {"good.py", "KNOWN_FAILURES.md", "expected.yaml"}
 
 
 def _copy_model_tree(source: Path, dest: Path) -> None:
+    """Copy an XML model and recursively referenced local resources."""
+    visited: set[Path] = set()
+
+    def copy_file(path: Path, target: Path) -> None:
+        resolved = path.resolve()
+        if resolved in visited or not resolved.is_file():
+            return
+        visited.add(resolved)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(resolved, target)
+        if resolved.suffix.lower() != ".xml":
+            return
+        text = resolved.read_text(errors="ignore")
+        for reference in re.findall(r'(?:file|mesh|texture)="([^"]+)"', text):
+            if reference.startswith(("/", "http")):
+                continue
+            dependency = resolved.parent / reference
+            if dependency.is_file():
+                copy_file(dependency, target.parent / reference)
+            elif dependency.is_dir():
+                shutil.copytree(dependency, target.parent / reference, dirs_exist_ok=True)
+
     if source.is_dir():
         shutil.copytree(source, dest, dirs_exist_ok=True)
     else:
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, dest)
-        text = source.read_text(errors="ignore")
-        for ref in re.findall(r'(?:file|mesh|texture)="([^"]+)"', text):
-            if ref.startswith(("/", "http")):
-                continue
-            dependency = source.parent / ref
-            if dependency.exists():
-                target = dest.parent / ref
-                if dependency.is_dir():
-                    _copy_model_tree(dependency, target)
-                else:
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(dependency, target)
+        copy_file(source, dest)
 
 
 def _condition_files(dest: Path, condition: str, repo_root: Path) -> None:
@@ -76,8 +85,12 @@ try:
     table = pq.read_table(signals_path)
     names = [item["name"] for item in task.signals[:2]]
     data = table.to_pydict()
-    for name in names:
-        print(f"{name}: {data[name][-1]}")
+    for index in range(2):
+        if index < len(names):
+            name = names[index]
+            print(f"{name}: {data[name][-1]}")
+        else:
+            print(f"signal_{index + 1}: unavailable")
 except Exception:
     print("signal_1: unavailable")
     print("signal_2: unavailable")
@@ -108,8 +121,9 @@ def build_workdir(
     else:
         (destination / "PROMPT.md").write_text(
             f"# {cfg.get('name', task_dir.name)}\n\n{cfg.get('description', '')}\n\n"
-            "Implement `controller.py` with a `Controller` class. Its `step(obs, t)` method "
-            "returns actuator controls as described by the qddot Controller API.\n"
+            "Implement controller.py with a Controller class. Optional reset(info: dict) returns None; "
+            "step(obs: dict[str, float], t: float) returns {actuator_name: control_value}. "
+            "Missing actuators keep their prior control.\n"
         )
     model_source = (task_dir / cfg["model"]).resolve()
     model_dest = destination / "model"

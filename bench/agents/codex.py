@@ -10,7 +10,8 @@ def build_command(workdir: Path, model: str, budget: dict) -> list[str]:
     return [
         "codex", "exec", "--json", "-m", model,
         "-c", f"model_reasoning_effort={budget.get('effort', 'medium')}",
-        "-s", "workspace-write", "-C", str(workdir), "-",
+        "-s", "workspace-write", "-C", str(workdir),
+        *budget.get("extra_args", []), "-",
     ]
 
 
