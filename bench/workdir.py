@@ -15,39 +15,30 @@ CONTROLLER_STUB = '''class Controller:
     def step(self, obs: dict[str, float], t: float) -> dict[str, float]:
         return {}
 '''
-FORBIDDEN = {"good.py", "KNOWN_FAILURES.md", "expected.yaml"}
+FORBIDDEN = {"good.py", "KNOWN_FAILURES.md", "expected.yaml", "model_fixed.xml"}
 
 
-def _copy_model_tree(source: Path, dest: Path) -> None:
-    """Copy an XML model and recursively referenced local resources."""
-    visited: set[Path] = set()
-
-    def copy_file(path: Path, target: Path) -> None:
-        resolved = path.resolve()
-        if resolved in visited or not resolved.is_file():
-            return
-        visited.add(resolved)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(resolved, target)
-        if resolved.suffix.lower() != ".xml":
-            return
-        text = resolved.read_text(errors="ignore")
-        for reference in re.findall(r'(?:file|mesh|texture)="([^"]+)"', text):
-            if reference.startswith(("/", "http")):
-                continue
-            dependency = resolved.parent / reference
-            if dependency.is_file():
-                copy_file(dependency, target.parent / reference)
-            elif dependency.is_dir():
-                shutil.copytree(dependency, target.parent / reference, dirs_exist_ok=True)
-
-    if source.is_dir():
-        shutil.copytree(source, dest, dirs_exist_ok=True)
-    else:
-        copy_file(source, dest)
+def is_secret(path: Path) -> bool:
+    """Files an agent must never see: reference solutions, seeded bugs and their notes."""
+    return path.name in FORBIDDEN or path.name.startswith("buggy_")
 
 
-def _condition_files(dest: Path, condition: str, repo_root: Path) -> None:
+def _copy_task(task_dir: Path, dest: Path) -> None:
+    """Copy a task's public files (models, scenes, prompt), never controllers or secrets."""
+    def ignore(directory: str, names: list[str]) -> set[str]:
+        here = Path(directory)
+        return {n for n in names if is_secret(here / n) or (here == task_dir and n == "controllers")}
+
+    shutil.copytree(task_dir, dest, ignore=ignore)
+
+
+def _asset_dirs(task_dir: Path, model: str) -> set[str]:
+    """Robot asset folders (under repo `assets/`) the task's model files reference."""
+    text = model + "".join(p.read_text(errors="ignore") for p in task_dir.rglob("*.xml") if not is_secret(p))
+    return set(re.findall(r"assets/([A-Za-z0-9_.-]+)", text))
+
+
+def _condition_files(dest: Path, condition: str, tools: Path, skill_dir: Path) -> None:
     if condition == "none":
         (dest / "CONDITION.md").write_text(
             "No simulator is available in this condition. Implement carefully using the task description.\n"
@@ -55,19 +46,14 @@ def _condition_files(dest: Path, condition: str, repo_root: Path) -> None:
     elif condition == "stdout":
         (dest / "sim.py").write_text(_stdout_runner())
     elif condition in {"qddot", "qddot_memory"}:
-        cli = repo_root / ".venv" / "bin" / "qddot"
         (dest / "CONDITION.md").write_text(
-            f"Use qddot to run, check, and debug the controller. CLI: `{cli}`.\n"
+            f"Use qddot to run, check, and debug the controller. CLI: `{tools / 'qddot'}`.\n"
             "Run the task using its task.yaml and controller.py. Do not claim success without a PASS verdict.\n"
         )
-        skill = repo_root / "skills" / "qddot" / "SKILL.md"
-        if skill.is_file():
-            skill_dest = dest / "skills" / "qddot"
-            skill_dest.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(skill, skill_dest / "SKILL.md")
+        if (skill_dir / "SKILL.md").is_file():
+            shutil.copytree(skill_dir, dest / "skills" / "qddot", dirs_exist_ok=True)
             # Claude Code discovers project skills natively under .claude/skills.
-            native = dest / ".claude" / "skills" / "qddot"
-            shutil.copytree(skill.parent, native, dirs_exist_ok=True)
+            shutil.copytree(skill_dir, dest / ".claude" / "skills" / "qddot", dirs_exist_ok=True)
     else:
         raise ValueError(f"Unknown condition: {condition}")
 
@@ -107,41 +93,39 @@ def build_workdir(
     *,
     repo_root: Path,
     destination: Path | None = None,
+    tools: Path | None = None,
 ) -> Path:
-    """Create a fresh workdir containing only the public task inputs."""
-    task_dir = task_dir.resolve()
-    if destination is None:
-        import tempfile
+    """Create a self-contained workdir with only the public task inputs.
 
+    Nothing in it points back into the repository: models and robot assets are
+    copied (mirroring `tasks/<name>/` and `assets/<robot>/`), and qddot comes
+    from `tools`, an install outside the repo (see `bench.isolation`).
+    """
+    import os
+    import tempfile
+
+    task_dir, repo_root = task_dir.resolve(), repo_root.resolve()
+    if destination is None:
         destination = Path(tempfile.mkdtemp(prefix="qddot-bench-"))
     else:
         destination.mkdir(parents=True, exist_ok=False)
-    cfg_path = task_dir / "task.yaml"
-    cfg = yaml.safe_load(cfg_path.read_text())
-    prompt = task_dir / "PROMPT.md"
-    if prompt.is_file():
-        shutil.copy2(prompt, destination / "PROMPT.md")
-    else:
-        (destination / "PROMPT.md").write_text(
-            f"# {cfg.get('name', task_dir.name)}\n\n{cfg.get('description', '')}\n\n"
-            "Implement controller.py with a Controller class. Optional reset(info: dict) returns None; "
-            "step(obs: dict[str, float], t: float) returns {actuator_name: control_value}. "
-            "Missing actuators keep their prior control.\n"
-        )
-    model_source = (task_dir / cfg["model"]).resolve()
-    if cfg.get("editable_model"):
-        # Model-repair tasks: the agent edits its own copy of the (self-contained) model.
-        model_dest = destination / "model"
-        _copy_model_tree(model_source, model_dest if model_source.is_dir() else model_dest / model_source.name)
-        cfg["model"] = str((model_dest if model_source.is_dir() else model_dest / model_source.name).relative_to(destination))
-    else:
-        # Read-only robot models (meshes, nested includes) are referenced in place.
-        cfg["model"] = str(model_source)
+    cfg = yaml.safe_load((task_dir / "task.yaml").read_text())
+    local = Path("tasks") / task_dir.name
+    _copy_task(task_dir, destination / local)
+    for robot in _asset_dirs(task_dir, cfg["model"]):
+        source = repo_root / "assets" / robot
+        if source.is_dir():
+            shutil.copytree(source, destination / "assets" / robot, dirs_exist_ok=True)
+    cfg["model"] = os.path.normpath(local / cfg["model"])
     (destination / "task.yaml").write_text(yaml.safe_dump(cfg, sort_keys=False))
+    prompt = task_dir / "PROMPT.md"
+    (destination / "PROMPT.md").write_text(prompt.read_text() if prompt.is_file() else
+                                           f"# {cfg.get('name', task_dir.name)}\n\n{cfg.get('description', '')}\n")
     starter = task_dir / "controllers" / "starter.py"
-    shutil.copy2(starter, destination / "controller.py") if starter.is_file() else (destination / "controller.py").write_text(CONTROLLER_STUB)
-    _condition_files(destination, condition, repo_root.resolve())
-    leaked = [path.name for path in destination.rglob("*") if path.is_file() and (path.name in FORBIDDEN or path.name.startswith("buggy_"))]
+    (destination / "controller.py").write_text(starter.read_text() if starter.is_file() else CONTROLLER_STUB)
+    tools = tools or repo_root / ".venv" / "bin"
+    _condition_files(destination, condition, tools, repo_root / "src" / "qddot" / "skill_data" / "qddot")
+    leaked = [str(p.relative_to(destination)) for p in destination.rglob("*") if p.is_file() and is_secret(p)]
     if leaked:
         raise AssertionError(f"Forbidden task files leaked: {leaked}")
     return destination

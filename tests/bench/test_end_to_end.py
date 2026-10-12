@@ -24,7 +24,8 @@ def test_fake_agent_grid_grades_and_reports(tmp_path):
     (task / "task.yaml").write_text(yaml.safe_dump(task_config, sort_keys=False))
     run_id = "bench-test"
     plan = RunPlan([task], [AgentSpec("fake", str(task / "controllers/good.py")), AgentSpec("fake", str(task / "controllers/buggy_slow.py"))], [Condition("none")], [0], run_id=run_id, jobs=1)
-    output = run_plan(plan, tmp_path, yes=True, dry_run=False, budget={"n_fuzz": 4, "final_message": "Done"})
+    output = run_plan(plan, tmp_path, yes=True, dry_run=False, budget={"n_fuzz": 4, "final_message": "Done"},
+                      tools=ROOT / ".venv" / "bin")
     try:
         rows = [json.loads(line) for line in output.read_text().splitlines()]
         assert len(rows) == 2

@@ -38,7 +38,7 @@ def task_throughput(root: Path) -> list[dict]:
         task = load_task(task_dir / "task.yaml")
         controller = task_dir / "controllers" / "good.py"
         model = mujoco.MjModel.from_xml_path(str(task.model_path))
-        wall = _median_s(lambda: run_episode(task, controller, root=root))
+        wall = _median_s(lambda t=task, c=controller: run_episode(t, c, root=root))
         steps = round(task.duration / model.opt.timestep)
         rows.append({"task": task_dir.name, "dof": model.nv, "sim_s": task.duration,
                      "wall_s": wall, "realtime_x": task.duration / wall,
@@ -79,8 +79,8 @@ def command_latency(work: Path) -> list[dict]:
 
 def render(throughput: list[dict], latency: list[dict]) -> str:
     machine = f"{platform.machine()} {platform.mac_ver()[0] or platform.release()}, {os.cpu_count()} cores"
-    lines = [f"Measured with `python -m bench.perf` on {machine}, MuJoCo {mujoco.__version__}, "
-             "median of 3 runs.", "",
+    lines = [(f"Measured with `python -m bench.perf` on {machine}, MuJoCo {mujoco.__version__}, "
+             "median of 3 runs."), "",
              "| Task | DoF | Sim time | Wall time | Real-time factor | Physics steps/s |",
              "|---|---:|---:|---:|---:|---:|"]
     lines += [f"| {r['task']} | {r['dof']} | {r['sim_s']:.1f} s | {r['wall_s']:.2f} s | "
