@@ -5,7 +5,6 @@ different solvers. Each installed backend in `BACKENDS` is exercised.
 """
 from __future__ import annotations
 
-import importlib
 from pathlib import Path
 
 import numpy as np
@@ -17,10 +16,11 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def _available() -> list[str]:
+    """Backends whose engine is importable here (e.g. Genesis lives in its own environment)."""
     names = []
-    for name, target in BACKENDS.items():
+    for name in BACKENDS:
         try:
-            importlib.import_module(target.split(":")[0])
+            load_backend(name, str(FIXTURES / "pendulum.xml"))
         except ImportError:
             continue
         names.append(name)

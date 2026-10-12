@@ -66,6 +66,8 @@ class Backend(Protocol):
 
 BACKENDS = {
     "mujoco": "qddot.sim.backends.mujoco:MujocoBackend",
+    "newton": "qddot.sim.backends.newton:NewtonBackend",
+    "genesis": "qddot.sim.backends.genesis:GenesisBackend",
 }
 
 

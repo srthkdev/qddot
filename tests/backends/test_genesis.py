@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
 
 import pytest
@@ -13,8 +12,9 @@ from qddot.task import load_task
 ROOT = Path(__file__).resolve().parents[2]
 
 
-@pytest.mark.skipif(importlib.util.find_spec("genesis") is None, reason="Genesis is not installed")
 def test_cartpole_good_controller_runs_on_genesis(tmp_path: Path) -> None:
+    pytest.importorskip("torch", reason="Genesis needs torch, which is not installed in this environment")
+    pytest.importorskip("genesis")
     task = load_task(ROOT / "tasks/cartpole_balance/task.yaml")
     task.backend = "genesis"
     perturb = {
