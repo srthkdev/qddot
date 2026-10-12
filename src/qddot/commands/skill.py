@@ -11,7 +11,7 @@ from ._out import console, exit_error
 
 
 def _skill_source() -> Path:
-    return Path(__file__).resolve().parents[3] / "skills" / "qddot"
+    return Path(__file__).resolve().parents[1] / "skill_data" / "qddot"
 
 
 def install_skill(destination: Path, force: bool = False) -> bool:

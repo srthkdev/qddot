@@ -1,0 +1,16 @@
+name: pendulum_swing
+description: Move a damped pendulum to a target angle and hold it there.
+model: model.xml
+duration: 3.0
+control_dt: 0.02
+init:
+  qpos: {hinge: -0.7}
+target: {angle_rad: 0.55}
+signals:
+  - {name: tip_x, kind: site_pos, ref: tip, axis: x}
+  - {name: tip_z, kind: site_pos, ref: tip, axis: z}
+specs:
+  - name: reach_and_hold
+    stl: "eventually[0,2](always[0,0.8](abs(joint.hinge.pos - 0.55) < 0.08))"
+  - name: stay_in_range
+    stl: "always(abs(joint.hinge.pos) < 1.15)"
