@@ -27,9 +27,10 @@ def run_command(command: list[str], workdir: Path, prompt: str, budget: dict[str
         output = completed.stdout + ("\n[stderr]\n" + completed.stderr if completed.stderr else "")
         code = completed.returncode
     except subprocess.TimeoutExpired as exc:
-        output = (exc.stdout or "") + (exc.stderr or "") + "\n[timeout]\n"
-        if isinstance(output, bytes):
-            output = output.decode(errors="replace")
+        def text(value: str | bytes | None) -> str:
+            return value.decode(errors="replace") if isinstance(value, bytes) else (value or "")
+
+        output = text(exc.stdout) + text(exc.stderr) + "\n[timeout]\n"
         code = 124
     transcript.write_text(output)
     return output, time.monotonic() - started, code

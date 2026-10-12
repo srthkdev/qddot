@@ -73,7 +73,7 @@ def _run_trial(task_dir: Path, agent: AgentSpec, condition: Condition, seed: int
         mcp_config.write_text(json.dumps({"mcpServers": {"qddot": server}}))
         trial_budget.update(mcp_config=str(mcp_config), mcp_server=server)
     result = adapter.run_agent(workdir, prompt, agent.model, trial_budget)
-    graded = grade(task_dir, workdir / "controller.py", seed + 100_000, int(budget.get("n_fuzz", 50)))
+    graded = grade(task_dir, workdir / "controller.py", seed + 100_000, int(budget.get("n_fuzz", 50)), workdir)
     add_false_done(graded, result.final_message)
     transcript = Path(result.transcript_path)
     contamination = audit(transcript.read_text(errors="ignore") if transcript.is_file() else "", repo_root)

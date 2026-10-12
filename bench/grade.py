@@ -40,13 +40,22 @@ def _metrics(task: Any, signals: dict[str, list[float]]) -> dict[str, float | No
     return {"energy": energy, "peak_overshoot": max(overshoots) if overshoots else None, "settling_time": max(settles) if settles else None}
 
 
-def grade(task_dir: Path, controller_path: Path, hidden_seed_base: int, n_fuzz: int = 50) -> dict:
-    """Grade a controller nominally and under hidden perturbations."""
+def grade(task_dir: Path, controller_path: Path, hidden_seed_base: int, n_fuzz: int = 50,
+          workdir: Path | None = None) -> dict:
+    """Grade a controller nominally and under hidden perturbations.
+
+    Specs, perturbations and everything else come from the repository's task. Only
+    for `editable_model` tasks is the agent's repaired model (in `workdir`) used.
+    """
+    import dataclasses
+
     from qddot.sim.fuzz import fuzz
     from qddot.sim.runner import run_episode
     from qddot.task import load_task
 
     task = load_task(task_dir / "task.yaml")
+    if task.editable_model and workdir is not None:
+        task = dataclasses.replace(task, model_path=load_task(workdir / "task.yaml").model_path)
     with tempfile.TemporaryDirectory(prefix="qddot-grade-") as temp:
         root = Path(temp)
         nominal = run_episode(task, controller_path, seed=hidden_seed_base, root=root / "nominal")
