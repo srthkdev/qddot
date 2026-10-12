@@ -19,8 +19,11 @@ FORBIDDEN = {"good.py", "KNOWN_FAILURES.md", "expected.yaml", "model_fixed.xml"}
 
 
 def is_secret(path: Path) -> bool:
-    """Files an agent must never see: reference solutions, seeded bugs and their notes."""
-    return path.name in FORBIDDEN or path.name.startswith("buggy_")
+    """Files an agent must never see: reference solutions, seeded bugs, their notes and bytecode."""
+    name = path.name
+    if path.parent.name == "__pycache__":  # compiled copies, e.g. good.cpython-312.pyc
+        name = name.split(".")[0] + ".py"
+    return name in FORBIDDEN or name.startswith("buggy_")
 
 
 def _copy_task(task_dir: Path, dest: Path) -> None:

@@ -42,3 +42,9 @@ def test_audit_flags_reaching_for_answers() -> None:
     assert audit(f"cat {ROOT}/tasks/x/controllers/good.py", ROOT)
     assert audit("ls controllers/buggy_sign.py", ROOT)
     assert audit("qddot run task.yaml --controller controller.py", ROOT) == []
+
+
+def test_bytecode_of_secrets_is_secret() -> None:
+    assert is_secret(Path("tasks/x/controllers/__pycache__/good.cpython-312.pyc"))
+    assert is_secret(Path("tasks/x/controllers/__pycache__/buggy_sign.cpython-312.pyc"))
+    assert not is_secret(Path("tasks/x/controllers/__pycache__/starter.cpython-312.pyc"))
