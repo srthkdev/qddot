@@ -18,15 +18,14 @@ class Controller:
             "elbow_joint": "elbow",
         }
 
-    def _nominal_step(self, obs: dict[str, float], t: float) -> dict[str, float]:
+    def step(self, obs, t):
         phase = float(np.clip(t / 2.0, 0.0, 1.0))
+        age = max(0.0, float(t) - float(obs.get("t", t)))
         blend = 10 * phase**3 - 15 * phase**4 + 6 * phase**5
+        # BUG: add a fixed joint-space lead whenever delayed feedback is detected.
+        lead = 3.5 * age
         return {
             self.actuator[joint]: self.start[joint] + blend * (goal - self.start[joint])
+            + np.sign(goal - self.start[joint]) * lead
             for joint, goal in self.target.items()
         }
-
-    def step(self, obs, t):
-        age = max(0.0, float(t) - float(obs.get("t", t)))
-        # BUG: interprets sensor age in milliseconds as if it were seconds.
-        return self._nominal_step(obs, t - (3000.0 * age if age > 0.005 else 0.0))

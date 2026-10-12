@@ -10,7 +10,7 @@ buggy_degrees:
 cause_rules:
   mapping_error: mapping
   unit_scale: unit_scale
-buggy_latency:
+buggy_phase_margin:
   first_failing_spec: null
   must_events: []
   cause: latency_sensitivity

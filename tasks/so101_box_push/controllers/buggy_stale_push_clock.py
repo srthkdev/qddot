@@ -31,18 +31,16 @@ class Controller:
 
     def _nominal_step(self, obs, t):
         self.last = np.array([obs[f"joint.{n}.pos"] for n in self.names])
-        u = min(1.0, max(0.0, t/2.0)); blend = u*u*(3-2*u)
-        xyz = np.array([0.391, -0.001 + 0.10*blend, 0.246])
-        return self.pose(xyz)
+        age = max(0.0, float(t) - float(obs.get("t", t)))
+        profile_t = max(0.0, t - 200.0 * age)
+        approach = min(1.0, profile_t / 0.8)
+        travel = min(1.0, max(0.0, (profile_t - 0.8) / 2.6))
+        # BUG: run the contact plan on a timestamp retarded by the stale sensor age.
+        x = 0.32 + 0.15 * travel
+        z = 0.105 - 0.05 * approach
+        output = self.pose(np.array([x, 0.0, z]))
+        output["gripper"] = 0.65
+        return output
 
     def step(self, obs, t):
-        age = max(0.0, float(t) - float(obs.get("t", t)))
-        estimate = dict(obs)
-        if age > 0.005:
-            for key in tuple(obs):
-                if key.startswith("joint.") and key.endswith(".pos"):
-                    velocity_key = key[:-4] + ".vel"
-                    if velocity_key in obs:
-                        # BUG: treats a seconds-based sensor age as milliseconds in a position estimate.
-                        estimate[key] = float(obs[key]) - 1000.0 * age * float(obs[velocity_key])
-        return self._nominal_step(estimate, t)
+        return self._nominal_step(obs, t)

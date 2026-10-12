@@ -1,0 +1,27 @@
+name: ur5e_obstacle_avoid
+description: Move the UR5e between two joint poses through a collision-free via pose.
+model: model.xml
+duration: 5.5
+control_dt: 0.02
+init: {keyframe: home}
+target:
+  shoulder_pan_joint: -0.76781
+  shoulder_lift_joint: -1.05167
+  elbow_joint: 1.51094
+  wrist_1_joint: -0.86468
+  wrist_2_joint: -1.56249
+  wrist_3_joint: 0.0
+contact_pairs:
+  - {name: arm_obstacle, a: [shoulder_link, upper_arm_link, forearm_link, wrist_1_link, wrist_2_link, wrist_3_link], b: [obstacle]}
+perturb:
+  mass_scale: [0.95, 1.05]
+  friction_scale: [0.9, 1.1]
+  obs_noise_std: 0.0005
+  latency_ms: [0, 30]
+specs:
+  - name: reach_goal
+    stl: "eventually[3.5,5.5](always[0,0.7](abs(joint.shoulder_pan_joint.pos - (-0.76781)) < 0.04 and abs(joint.shoulder_lift_joint.pos - (-1.05167)) < 0.04 and abs(joint.elbow_joint.pos - 1.51094) < 0.04 and abs(joint.wrist_1_joint.pos - (-0.86468)) < 0.04 and abs(joint.wrist_2_joint.pos - (-1.56249)) < 0.04 and abs(joint.wrist_3_joint.pos) < 0.04))"
+  - name: collision_free
+    stl: "always(col_arm_obstacle < 0.5)"
+  - name: no_joint_limit
+    stl: "always(ev.joint_limit < 0.5)"

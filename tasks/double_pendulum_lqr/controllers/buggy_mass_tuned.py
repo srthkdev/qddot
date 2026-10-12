@@ -30,21 +30,16 @@ class Controller:
                 break
             p = next_p
         self.gain = np.linalg.solve(r + b.T @ p @ b, b.T @ p @ a)
+        # Nominal actuator authority leaves little reserve for the heavy-link case.
         self.gravity = np.zeros(self.nu)
 
     def _nominal_step(self, obs: dict[str, float], t: float) -> dict[str, float]:
         state = np.array([obs["joint.shoulder.pos"], obs["joint.elbow.pos"],
                           obs["joint.shoulder.vel"], obs["joint.elbow.vel"]])
-        return dict(zip(("shoulder_motor", "elbow_motor"), (-self.gain @ state).tolist()))
+        command = -self.gain @ state
+        # BUG: add a small high-error gain boost calibrated against nominal link inertia.
+        command *= 1.0 + 3.0 * float(np.linalg.norm(state[:2]))
+        return dict(zip(("shoulder_motor", "elbow_motor"), command.tolist()))
 
     def step(self, obs, t):
-        age = max(0.0, float(t) - float(obs.get("t", t)))
-        estimate = dict(obs)
-        if age > 0.005:
-            for key in tuple(obs):
-                if key.startswith("joint.") and key.endswith(".pos"):
-                    velocity_key = key[:-4] + ".vel"
-                    if velocity_key in obs:
-                        # BUG: treats a seconds-based sensor age as milliseconds in a position estimate.
-                        estimate[key] = float(obs[key]) - 1000.0 * age * float(obs[velocity_key])
-        return self._nominal_step(estimate, t)
+        return self._nominal_step(obs, t)

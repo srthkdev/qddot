@@ -24,18 +24,23 @@ class Controller:
             error = xyz - self.data.site_xpos[self.site]
             jac = jacp[:, self.dofs]
             dq = jac.T @ np.linalg.solve(jac @ jac.T + 0.02**2 * np.eye(3), error)
-            update = np.clip(0.7*dq, -0.08, 0.08)
+            update = np.clip(1.8*dq, -0.16, 0.16)
             self.last = np.clip(self.last + update, [-1.7,-1.55,-1.5,-1.45,-2.5], [1.7,1.55,1.5,1.45,2.5])
             self.data.qpos[self.qids] = self.last
         return dict(zip(self.names, self.last.tolist()))
 
-    def step(self, obs, t):
+    def _nominal_step(self, obs, t):
         self.last = np.array([obs[f"joint.{n}.pos"] for n in self.names])
-        # Lower the fingertips to the box centerline, then push across the tabletop.
-        approach = min(1.0, t/0.8)
-        travel = min(1.0, max(0.0, (t-0.8)/2.6))
-        x = 0.32 + 0.15*travel
-        z = 0.105 - 0.05*approach
-        output = self.pose(np.array([x, 0.0, z]))
-        output["gripper"] = 0.65
-        return output
+        u = min(1.0, max(0.0, t/2.0)); blend = u*u*(3-2*u)
+        xyz = np.array([0.391, -0.001 + 0.10*blend, 0.246])
+        return self.pose(xyz)
+
+    def step(self, obs, t):
+        age = max(0.0, float(t) - float(obs.get("t", t)))
+        estimate = dict(obs)
+        if age > 0.005:
+            for name in self.names:
+                key = f"joint.{name}.pos"
+                estimate[key] = float(obs[key]) - 8.0 * age * float(obs[f"joint.{name}.vel"])
+        # BUG: extrapolate delayed joint samples with the wrong sign during line tracking.
+        return self._nominal_step(estimate, t)

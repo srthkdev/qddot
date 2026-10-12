@@ -8,7 +8,7 @@ target: {position: 1.4}
 perturb:
   latency_ms: [0, 30]
   mass_scale: [0.85, 1.2]
-  obs_noise_std: 0.0005
+  obs_noise_std: 0.006
 specs:
   - name: overshoot_bound
     stl: "always[0,3](joint.shoulder.pos < 1.47)"

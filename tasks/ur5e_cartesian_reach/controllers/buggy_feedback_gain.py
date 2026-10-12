@@ -24,17 +24,15 @@ class Controller:
         dq = jac.T @ np.linalg.solve(jac@jac.T + 0.04**2*np.eye(3), error)
         # Bound each resolved-rate update and retain clearance from the position limits.
         limits = self.model.jnt_range[[mujoco.mj_name2id(self.model,mujoco.mjtObj.mjOBJ_JOINT,n) for n in self.names]]
-        command = np.clip(q + np.clip(0.9*dq,-0.035,0.035),limits[:,0]+0.15,limits[:,1]-0.15)
+        command = np.clip(q + np.clip(2.0*dq,-0.08,0.08),limits[:,0]+0.15,limits[:,1]-0.15)
         return dict(zip(["shoulder_pan","shoulder_lift","elbow","wrist_1","wrist_2","wrist_3"],command.tolist()))
 
     def step(self, obs, t):
         age = max(0.0, float(t) - float(obs.get("t", t)))
         estimate = dict(obs)
         if age > 0.005:
-            for key in tuple(obs):
-                if key.startswith("joint.") and key.endswith(".pos"):
-                    velocity_key = key[:-4] + ".vel"
-                    if velocity_key in obs:
-                        # BUG: treats a seconds-based sensor age as milliseconds in a position estimate.
-                        estimate[key] = float(obs[key]) - 1000.0 * age * float(obs[velocity_key])
+            for name in self.names:
+                key = f"joint.{name}.pos"
+                estimate[key] = float(obs[key]) - 20.0 * age * float(obs[f"joint.{name}.vel"])
+        # BUG: extrapolate delayed joint feedback backward as if velocity were reversing.
         return self._nominal_step(estimate, t)

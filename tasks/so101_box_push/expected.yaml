@@ -3,12 +3,7 @@ buggy_wrong_frame:
   must_events:
   - collision
   cause: sign_or_frame
-buggy_units:
-  first_failing_spec: null
-  must_events: []
-  cause: units
-  fuzz_max_pass_rate: 0.6
-buggy_latency:
+buggy_stale_push_clock:
   first_failing_spec: null
   must_events: []
   cause: latency_sensitivity

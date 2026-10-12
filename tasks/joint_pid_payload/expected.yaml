@@ -13,8 +13,8 @@ buggy_derivative_kick:
   must_events:
   - saturation
   cause: saturation
-buggy_latency:
+buggy_unfiltered_derivative:
   first_failing_spec: null
   must_events: []
-  cause: latency_sensitivity
+  cause: gain_instability
   fuzz_max_pass_rate: 0.6

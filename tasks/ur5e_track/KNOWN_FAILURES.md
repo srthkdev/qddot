@@ -8,3 +8,5 @@ Nominal values below come from `qddot.sim.runner.run_episode` using the vendored
 | `buggy_degrees.py` | Converts every radian-valued target as if it were degrees. `pan_settle` is the first failed spec; all three joints head toward values near zero rather than their requested poses. | No event is required; the failure is visible in the joint signals. | Use task target values directly in radians; remove `deg2rad`. |
 
 The good controller's maximum error after t=2 s is 0.0123 rad across the three target joints and ends within 0.0123 rad of each target.
+
+`buggy_phase_margin.py` adds a fixed joint-space lead whenever feedback is delayed, independent of the trajectory speed. The lead causes overshoot under latency perturbation; scale prediction by desired joint velocity and measured age.

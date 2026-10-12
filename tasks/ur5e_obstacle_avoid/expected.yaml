@@ -1,0 +1,9 @@
+buggy_direct_path:
+  first_failing_spec: collision_free
+  must_events: [collision]
+  cause: sign_or_frame
+buggy_age_scale:
+  first_failing_spec: null
+  must_events: []
+  cause: latency_sensitivity
+  fuzz_max_pass_rate: 0.6

@@ -7,8 +7,8 @@ buggy_mapping:
   must_events:
   - saturation
   cause: wrong_mapping
-buggy_latency:
+buggy_mass_tuned:
   first_failing_spec: null
   must_events: []
-  cause: latency_sensitivity
+  cause: gain_instability
   fuzz_max_pass_rate: 0.6

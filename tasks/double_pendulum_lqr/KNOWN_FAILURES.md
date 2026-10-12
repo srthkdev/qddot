@@ -1,1 +1,3 @@
 `buggy_wrong_equilibrium.py` computes its transition model at the downward configuration and applies that gain near upright, so `capture_upright` fails within roughly 0.2 s, followed by saturation and joint-stop events. Linearize at q=[0,0]. `buggy_mapping.py` swaps the two measured angular velocities in the LQR state; the incorrect feedback destabilizes the transient and violates `capture_upright` within about 0.3 s. Keep state order `[shoulder, elbow, shoulder_rate, elbow_rate]`.
+
+`buggy_mass_tuned.py` applies a state-dependent gain boost calibrated on the nominal link inertia. The increased feedback destabilizes a portion of the mass-scaled trials and fails `capture_upright`; reduce the high-error gain boost.

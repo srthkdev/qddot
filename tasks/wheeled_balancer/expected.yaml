@@ -6,8 +6,8 @@ buggy_mapping:
   first_failing_spec: balance
   must_events: []
   cause: wrong_mapping
-buggy_latency:
+buggy_damping_margin:
   first_failing_spec: null
   must_events: []
-  cause: latency_sensitivity
+  cause: gain_instability
   fuzz_max_pass_rate: 0.6

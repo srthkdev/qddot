@@ -1,13 +1,9 @@
 # Known controller failures: ur5e_cartesian_reach
 
-### buggy_frame
+### `buggy_frame.py`
 
-Root cause: The world-frame Cartesian residual is negated before the DLS solve, driving away from the target.
+The Cartesian residual is negated before the damped least-squares solve, driving away from the target. `reach_hold` fails and collision events may occur. Restore the world-frame target-minus-measured residual.
 
-First failing spec: reach_hold. Approximate first failure time: 2.5 s. Events: collision. Minimal fix: restore the nominal trajectory scaling, frame convention, gravity model, or force margin described above.
+### `buggy_feedback_gain.py`
 
-### buggy_units
-
-Root cause: The resolved-rate update uses a tenfold gain; it passes nominally but loses margin under sampled mass and observation perturbations.
-
-First failing spec: none nominally; perturbation-sensitive. Approximate first failure time: 2.5 s. Events: none required. Minimal fix: restore the nominal trajectory scaling, frame convention, gravity model, or force margin described above.
+The controller extrapolates delayed joint feedback backward with an excessive age multiplier before the DLS solve. It passes fresh feedback but loses target tolerance under latency. Use a bounded predictor with the correct velocity sign.
