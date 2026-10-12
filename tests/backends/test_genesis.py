@@ -27,7 +27,7 @@ def test_cartpole_good_controller_runs_on_genesis(tmp_path: Path) -> None:
     }
     result = run_episode(
         task,
-        ROOT / "tasks/cartpole_balance/controllers/good.py",
+        ROOT / "tests/backends/fixtures/cartpole_lqr.py",
         seed=0,
         perturb=perturb,
         root=tmp_path,

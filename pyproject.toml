@@ -13,7 +13,7 @@ dependencies = [
     "mcp>=2.3.0",
     "mujoco>=3.15.0",
     "numpy>=2.5.4",
-    "pillow>=12.3.0",
+    "pillow>=10.0",
     "pyarrow>=26.0.0",
     "pyyaml>=6.0.3",
     "rich>=15.0.0",
@@ -42,6 +42,7 @@ memory = [
     "fastembed>=0.9.0",
 ]
 newton = [
+    "mujoco-warp>=3.15.0",
     "newton>=1.6.1",
 ]
 envs = [
@@ -52,6 +53,17 @@ envs = [
 ros = [
     "roslibpy>=2.1.0",
 ]
+genesis = [
+    "genesis-world>=1.4.4",
+]
 
 [tool.ruff]
 line-length = 100
+
+[tool.uv]
+environments = [
+    "platform_python_implementation == 'CPython' and sys_platform == 'darwin'",
+    "platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+]
+# genesis-world (via moviepy) caps pillow below 12; fastembed needs a newer one.
+conflicts = [[{ extra = "genesis" }, { extra = "memory" }]]

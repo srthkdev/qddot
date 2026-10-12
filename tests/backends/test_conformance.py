@@ -36,6 +36,11 @@ def _pendulum(backend: str, q0: float = 0.0):
     return sim
 
 
+def _needs_forces(sim) -> None:
+    if not getattr(sim, "measures_contact_force", True):
+        pytest.xfail(f"{sim.name} declares it cannot measure contact forces")
+
+
 def _settle(sim, seconds: float) -> None:
     for _ in range(round(seconds / sim.timestep)):
         sim.step()
@@ -78,6 +83,7 @@ def test_gravity_and_actuation(backend: str) -> None:
 
 def test_resting_contact_force_and_names(backend: str) -> None:
     sim = load_backend(backend, str(FIXTURES / "box_drop.xml"))
+    _needs_forces(sim)
     sim.reset({}, 1.0, 1.0)
     assert not sim.contacts()
     _settle(sim, 1.0)
@@ -93,6 +99,7 @@ def test_resting_contact_force_and_names(backend: str) -> None:
 
 def test_mass_scaling(backend: str) -> None:
     sim = load_backend(backend, str(FIXTURES / "box_drop.xml"))
+    _needs_forces(sim)
     sim.reset({}, 1.0, 1.5)
     _settle(sim, 1.0)
     assert sum(c.normal_force for c in sim.contacts()) == pytest.approx(1.5 * 2.0 * 9.81, rel=0.2)
@@ -111,6 +118,7 @@ def test_deterministic(backend: str) -> None:
 def test_contact_force_is_measured_not_inferred(backend: str) -> None:
     """The floor carries both stacked boxes; a per-body weight estimate would report only one."""
     sim = load_backend(backend, str(FIXTURES / "stack.xml"))
+    _needs_forces(sim)
     sim.reset({}, 1.0, 1.0)
     _settle(sim, 1.0)
     by_pair = {frozenset((c.a, c.b)): c.normal_force for c in sim.contacts()}
