@@ -31,114 +31,156 @@ class EpisodeResult:
     verdict: dict[str, Any]
 
 
+class Episode:
+    """One steppable run of a task: ``observe()`` then ``act()`` each control step, then ``finish()``.
+
+    ``run_episode`` drives it with a controller file; RL environment wrappers
+    (Gymnasium, OpenEnv, verifiers) drive it with actions from a policy.
+    """
+
+    def __init__(self, task: Task, seed: int = 0, perturb: dict[str, Any] | None = None,
+                 name: str = "policy") -> None:
+        self.task, self.seed, self.started = task, seed, time.perf_counter()
+        self.params = _resolve_params(task, perturb)
+        digest = hashlib.sha256(json.dumps(self.params, sort_keys=True, separators=(",", ":")).encode())
+        self.id = f"{task.name}-{name}-s{seed}-{digest.hexdigest()[:6]}"
+        self.rng = np.random.default_rng(seed)
+        self.sim = sim = load_backend(getattr(task, "backend", "mujoco"), str(task.model_path))
+        sim.reset(task.init, float(self.params["friction_scale"] or 1.0), float(self.params["mass_scale"] or 1.0))
+        self.substeps = round(task.control_dt / sim.timestep)
+        if self.substeps < 1 or not np.isclose(self.substeps * sim.timestep, task.control_dt, rtol=0, atol=1e-10):
+            raise ValueError(f"control_dt {task.control_dt} must be a multiple of model timestep {sim.timestep}")
+        self.steps = max(1, round(task.duration / task.control_dt))
+        self.detector = EventDetector()
+        self.rows: list[dict[str, float]] = []
+        self.history: list[dict[str, float]] = []
+        self.errors: list[str] = []
+        self.compute_log: list[float] = []
+        self.latency_steps = max(0, round(float(self.params["latency_ms"] or 0.0) / (task.control_dt * 1000)))
+        self.noise_std = float(self.params["obs_noise_std"] or 0.0)
+        self.jitter_std_steps = float(self.params["jitter_ms"] or 0.0) / (sim.timestep * 1000)
+        self.budget = self.params["controller_budget_ms"]
+        self.last_ctrl = sim.ctrl()
+        self.queue: list[tuple[int, np.ndarray]] = []
+        self.index = self.physics_count = 0
+        self.done = False
+        _record(self.rows, self.history, sim, task, self.detector, 0.0, sim.ctrl())
+
+    @property
+    def t(self) -> float:
+        return self.index * self.task.control_dt
+
+    def info(self) -> dict[str, Any]:
+        """What a controller's ``reset(info)`` receives."""
+        return {"actuators": [a.name for a in self.sim.actuators], "joints": [j.name for j in self.sim.joints],
+                "control_dt": self.task.control_dt, "target": self.task.target,
+                "model_path": str(self.task.model_path), "backend": self.sim.name}
+
+    def observe(self) -> dict[str, float]:
+        """Start a control step and return the (delayed, noisy) observation."""
+        self.detector.begin_control_step()
+        obs = dict(self.history[max(0, len(self.history) - 1 - self.latency_steps)])
+        if self.noise_std:
+            for name in obs:
+                obs[name] += float(self.rng.normal(0.0, self.noise_std))
+        return obs
+
+    def act(self, command: dict[str, Any], compute_ms: float = 0.0, who: str = "policy") -> None:
+        """Apply a command (actuator name -> value) and advance one control step."""
+        t, task, sim, detector = self.t, self.task, self.sim, self.detector
+        self.compute_log.append(compute_ms)
+        missed = self.budget is not None and compute_ms > float(self.budget)
+        if missed:
+            detector.deadline_miss(t, who, compute_ms)
+        else:
+            detector.deadline_met()
+        self.last_ctrl = _apply_limits(command, self.last_ctrl, sim, detector, t)
+        # A late command lands ceil(compute/control_dt) control steps later; jitter shifts it further.
+        jitter = round(float(self.rng.normal(0.0, self.jitter_std_steps))) if self.jitter_std_steps else 0
+        late = int(np.ceil(compute_ms / (task.control_dt * 1000.0))) if missed else 0
+        self.queue.append((self.physics_count + late * self.substeps + max(0, jitter), self.last_ctrl.copy()))
+        self.queue.sort(key=lambda item: item[0])
+        for _ in range(self.substeps):
+            while self.queue and self.queue[0][0] <= self.physics_count:
+                sim.set_ctrl(self.queue.pop(0)[1])
+            sim.step()
+            self.physics_count += 1
+            now = self.physics_count * sim.timestep
+            detector.detect_physics(sim.contacts(), sim.joints, sim.joint_state()[0], now,
+                                    task.contact_pairs, self.index)
+            if not sim.finite():
+                self.fail("simulation state contains non-finite positions or velocities", "nan_state", "state", now)
+                return
+        self.index += 1
+        _record(self.rows, self.history, sim, task, detector, self.t, sim.ctrl())
+        self.done = self.index >= self.steps
+
+    def fail(self, message: str, kind: str = "controller_error", who: str = "", t: float | None = None,
+             detail: dict[str, Any] | None = None) -> None:
+        """End the episode with an error (controller exception, numerical blow-up)."""
+        self.errors.append(message)
+        self.detector.add(self.t if t is None else t, kind, who, detail=detail)
+        self.done = True
+
+    def verdict(self) -> dict[str, Any]:
+        """Evaluate specs on everything recorded so far."""
+        verdict = _verdict(self.task, self.rows, self.detector, self.errors, self.params, self.sim)
+        verdict.update(episode=self.id, seed=self.seed)
+        verdict["stats"] = {"control_steps": len(self.rows) - 1, "physics_steps": self.physics_count,
+                            "wall_s": time.perf_counter() - self.started}
+        return verdict
+
+    def finish(self, root: Path = Path(".qddot"), record_mcap: bool = True,
+               controller_path: Path | None = None) -> EpisodeResult:
+        """Write the episode's artifacts and return its verdict."""
+        verdict = self.verdict()
+        meta = {"task_path": str(self.task.path), "seed": self.seed, "perturb": self.params,
+                "env": verdict["env"], "compute_ms": [round(v, 6) for v in self.compute_log]}
+        if controller_path is not None:
+            verdict["controller"] = str(controller_path)
+            meta.update(controller_path=str(controller_path), controller_sha256=_sha256(controller_path))
+        episode_dir = Path(root) / "runs" / self.id
+        write_episode(episode_dir, self.rows, self.detector.emitted, verdict, meta, record_mcap)
+        return EpisodeResult(episode_dir=episode_dir, verdict=verdict)
+
+
 def run_episode(task: Task, controller_path: Path, seed: int = 0,
                 perturb: dict[str, Any] | None = None, root: Path = Path(".qddot"),
                 record_mcap: bool = True,
                 on_step: Callable[[int, float, Any, Any], None] | None = None,
                 compute_ms_override: Sequence[float] | None = None) -> EpisodeResult:
-    """Run one deterministic episode and write its artifacts.
+    """Run a controller file through one deterministic episode and write its artifacts.
 
     ``on_step(control_index, t, *backend.native())`` is called after the initial
     state (index -1) and after every control step, for re-simulation tools.
     ``compute_ms_override`` replays recorded controller compute times so deadline
     effects are reproduced exactly instead of re-measured.
     """
-    started = time.perf_counter()
     controller_path = Path(controller_path).resolve()
-    params = _resolve_params(task, perturb)
-    param_hash = hashlib.sha256(json.dumps(params, sort_keys=True, separators=(",", ":")).encode())
-    episode_id = f"{task.name}-{controller_path.stem}-s{seed}-{param_hash.hexdigest()[:6]}"
-    rng = np.random.default_rng(seed)
-
-    sim = load_backend(getattr(task, "backend", "mujoco"), str(task.model_path))
-    sim.reset(task.init, float(params["friction_scale"] or 1.0), float(params["mass_scale"] or 1.0))
-    substeps = round(task.control_dt / sim.timestep)
-    if substeps < 1 or not np.isclose(substeps * sim.timestep, task.control_dt, rtol=0, atol=1e-10):
-        raise ValueError(f"control_dt {task.control_dt} must be a multiple of model timestep {sim.timestep}")
-    actuator_names = [act.name for act in sim.actuators]
+    episode = Episode(task, seed, perturb, name=controller_path.stem)
     controller = _load_controller(controller_path)
     if hasattr(controller, "reset"):
-        controller.reset({"actuators": actuator_names, "joints": [j.name for j in sim.joints],
-                          "control_dt": task.control_dt, "target": task.target,
-                          "model_path": str(task.model_path), "backend": sim.name})
-
-    detector = EventDetector()
-    rows: list[dict[str, float]] = []
-    history: list[dict[str, float]] = []
-    errors: list[str] = []
-    compute_log: list[float] = []
-    _record(rows, history, sim, task, detector, 0.0, sim.ctrl())
-    latency_steps = max(0, round(float(params["latency_ms"] or 0.0) / (task.control_dt * 1000)))
-    noise_std = float(params["obs_noise_std"] or 0.0)
-    jitter_std_steps = float(params["jitter_ms"] or 0.0) / (sim.timestep * 1000)
-    budget = params["controller_budget_ms"]
-    last_ctrl = sim.ctrl()
-    queue: list[tuple[int, np.ndarray]] = []
-    physics_count = 0
+        controller.reset(episode.info())
     if on_step is not None:
-        on_step(-1, 0.0, *sim.native())
-
-    for control_index in range(max(1, round(task.duration / task.control_dt))):
-        t = control_index * task.control_dt
-        detector.begin_control_step()
-        obs = dict(history[max(0, len(history) - 1 - latency_steps)])
-        if noise_std:
-            for name in obs:
-                obs[name] += float(rng.normal(0.0, noise_std))
-        call_started = time.perf_counter()
+        on_step(-1, 0.0, *episode.sim.native())
+    while not episode.done:
+        index, obs = episode.index, episode.observe()
+        started = time.perf_counter()
         try:
-            output = controller.step(obs, t)
-            if not isinstance(output, dict):
+            command = controller.step(obs, episode.t)
+            if not isinstance(command, dict):
                 raise TypeError("Controller.step must return a mapping of actuator names to values")
         except Exception:  # noqa: BLE001 - controller failures are episode results.
-            errors.append("\n".join(traceback.format_exc().splitlines()[-20:]))
-            detector.add(t, "controller_error", controller_path.name, detail={"traceback": errors[-1]})
+            trace = "\n".join(traceback.format_exc().splitlines()[-20:])
+            episode.fail(trace, who=controller_path.name, detail={"traceback": trace})
             break
-        compute_ms = (time.perf_counter() - call_started) * 1000.0
-        if compute_ms_override is not None and control_index < len(compute_ms_override):
-            compute_ms = float(compute_ms_override[control_index])
-        compute_log.append(compute_ms)
-        missed = budget is not None and compute_ms > float(budget)
-        if missed:
-            detector.deadline_miss(t, controller_path.name, compute_ms)
-        else:
-            detector.deadline_met()
-
-        last_ctrl = _apply_limits(output, last_ctrl, sim, detector, t)
-        # A late command lands ceil(compute/control_dt) control steps later; jitter shifts it further.
-        jitter = round(float(rng.normal(0.0, jitter_std_steps))) if jitter_std_steps else 0
-        late = int(np.ceil(compute_ms / (task.control_dt * 1000.0))) if missed else 0
-        queue.append((physics_count + late * substeps + max(0, jitter), last_ctrl.copy()))
-        queue.sort(key=lambda item: item[0])
-
-        for _ in range(substeps):
-            while queue and queue[0][0] <= physics_count:
-                sim.set_ctrl(queue.pop(0)[1])
-            sim.step()
-            physics_count += 1
-            now = physics_count * sim.timestep
-            detector.detect_physics(sim.contacts(), sim.joints, sim.joint_state()[0], now,
-                                    task.contact_pairs, control_index)
-            if not sim.finite():
-                detector.add(now, "nan_state", "state")
-                errors.append("simulation state contains non-finite positions or velocities")
-                break
-        if "nan_state" in detector.step_kinds:
-            break
-        _record(rows, history, sim, task, detector, (control_index + 1) * task.control_dt, sim.ctrl())
-        if on_step is not None:
-            on_step(control_index, (control_index + 1) * task.control_dt, *sim.native())
-
-    verdict = _verdict(task, rows, detector, errors, params, sim)
-    verdict.update(episode=episode_id, controller=str(controller_path), seed=seed)
-    verdict["stats"] = {"control_steps": len(rows) - 1, "physics_steps": physics_count,
-                        "wall_s": time.perf_counter() - started}
-    meta = {"task_path": str(task.path), "controller_path": str(controller_path),
-            "controller_sha256": _sha256(controller_path), "seed": seed, "perturb": params,
-            "env": verdict["env"], "compute_ms": [round(v, 6) for v in compute_log]}
-    episode_dir = Path(root) / "runs" / episode_id
-    write_episode(episode_dir, rows, detector.emitted, verdict, meta, record_mcap)
-    return EpisodeResult(episode_dir=episode_dir, verdict=verdict)
+        compute_ms = (time.perf_counter() - started) * 1000.0
+        if compute_ms_override is not None and index < len(compute_ms_override):
+            compute_ms = float(compute_ms_override[index])
+        episode.act(command, compute_ms, who=controller_path.name)
+        if on_step is not None and episode.index > index:
+            on_step(index, episode.t, *episode.sim.native())
+    return episode.finish(root, record_mcap, controller_path)
 
 
 def _resolve_params(task: Task, perturb: dict[str, Any] | None) -> dict[str, Any]:

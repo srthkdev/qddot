@@ -1,0 +1,42 @@
+name: aloha_transfer_cube
+description: Transfer a cube from the right gripper to the left and hold it aloft.
+model: scene.xml
+duration: 6.0
+control_dt: 0.02
+init: {keyframe: neutral_pose}
+target: {x: 0.22, y: -0.02, z: 0.024}
+signals:
+  - {name: cube_x, kind: body_pos, ref: cube, axis: x}
+  - {name: cube_y, kind: body_pos, ref: cube, axis: y}
+  - {name: cube_z, kind: body_pos, ref: cube, axis: z}
+  - {name: cube_right_pinch, kind: distance, ref: right/gripper, to: cube}
+  - {name: cube_left_pinch, kind: distance, ref: left/gripper, to: cube}
+contact_pairs:
+  - {name: arm_arm, a: [left/shoulder_link, left/upper_arm_link, left/upper_forearm_link, left/lower_forearm_link, left/wrist_link, left/gripper_link, left/gripper_base, left/left_finger_link, left/right_finger_link, right/shoulder_link, right/upper_arm_link, right/upper_forearm_link, right/lower_forearm_link, right/wrist_link, right/gripper_link, right/gripper_base, right/left_finger_link, right/right_finger_link], b: [left/shoulder_link, left/upper_arm_link, left/upper_forearm_link, left/lower_forearm_link, left/wrist_link, left/gripper_link, left/gripper_base, left/left_finger_link, left/right_finger_link, right/shoulder_link, right/upper_arm_link, right/upper_forearm_link, right/lower_forearm_link, right/wrist_link, right/gripper_link, right/gripper_base, right/left_finger_link, right/right_finger_link]}
+  - {name: arm_table, a: [left/shoulder_link, left/upper_arm_link, left/upper_forearm_link, left/lower_forearm_link, left/wrist_link, left/gripper_link, left/gripper_base, left/left_finger_link, left/right_finger_link, right/shoulder_link, right/upper_arm_link, right/upper_forearm_link, right/lower_forearm_link, right/wrist_link, right/gripper_link, right/gripper_base, right/left_finger_link, right/right_finger_link], b: [table, floor]}
+perturb:
+  friction_scale: [0.8, 1.2]
+  mass_scale: [0.9, 1.1]
+  obs_noise_std: 0.001
+  latency_ms: [0, 20]
+  jitter_ms: 1
+specs:
+  - name: cube_lifted
+    stl: "eventually[0,2.0](cube_z > 0.105)"
+  - name: left_holds_cube_at_end
+    stl: "always[5.0,6.0](cube_left_pinch < 0.055 and cube_right_pinch > 0.10 and cube_z > 0.105)"
+  - name: cube_stays_lifted_after_pickup
+    stl: "always[1.7,6.0](cube_z > 0.065)"
+  - name: no_arm_arm_collision
+    stl: "always(col_arm_arm < 0.5)"
+  - name: no_arm_table_collision
+    stl: "always(col_arm_table < 0.5)"
+render:
+  camera: free
+  width: 1280
+  height: 720
+  fps: 30
+  lookat: [0.0, -0.02, 0.22]
+  distance: 1.65
+  azimuth: 132
+  elevation: -24

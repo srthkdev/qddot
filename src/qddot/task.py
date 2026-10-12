@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,7 @@ class Task:
     perturb: dict[str, Any] = field(default_factory=dict)
     specs: list[dict[str, Any]] = field(default_factory=list)
     editable_model: bool = False
+    render: dict[str, Any] = field(default_factory=dict)
 
 
 def load_task(path: str | Path) -> Task:
@@ -60,6 +62,33 @@ def load_task(path: str | Path) -> Task:
     for key in mappings:
         if key in raw and not isinstance(raw[key], dict):
             raise TaskError(f"{key} must be a mapping")
+    render = raw.get("render", {})
+    if not isinstance(render, dict):
+        raise TaskError("render must be a mapping")
+    unknown_render_fields = set(render) - {
+        "camera", "width", "height", "fps", "lookat", "distance", "azimuth", "elevation"
+    }
+    if unknown_render_fields:
+        raise TaskError(f"unknown render field(s): {', '.join(sorted(unknown_render_fields))}")
+    if "camera" in render and (not isinstance(render["camera"], str) or not render["camera"].strip()):
+        raise TaskError("render.camera must be a camera name or 'free'")
+    for key in ("width", "height", "fps"):
+        if key in render and (isinstance(render[key], bool) or not isinstance(render[key], int) or render[key] <= 0):
+            raise TaskError(f"render.{key} must be a positive integer")
+    for key in ("distance", "azimuth", "elevation"):
+        if key in render and (
+            isinstance(render[key], bool) or not isinstance(render[key], (int, float))
+            or not math.isfinite(render[key])
+        ):
+            raise TaskError(f"render.{key} must be a number")
+    if "distance" in render and render["distance"] <= 0:
+        raise TaskError("render.distance must be positive")
+    if "lookat" in render and (
+        not isinstance(render["lookat"], list) or len(render["lookat"]) != 3
+        or any(isinstance(value, bool) or not isinstance(value, (int, float))
+               or not math.isfinite(value) for value in render["lookat"])
+    ):
+        raise TaskError("render.lookat must be a three-number list")
     for key in ("signals", "contact_pairs", "specs"):
         if key in raw and (not isinstance(raw[key], list) or not all(isinstance(v, dict) for v in raw[key])):
             raise TaskError(f"{key} must be a list of mappings")
@@ -82,6 +111,7 @@ def load_task(path: str | Path) -> Task:
         signals=raw.get("signals", []), contact_pairs=raw.get("contact_pairs", []),
         perturb=raw.get("perturb", {}), specs=raw.get("specs", []),
         editable_model=raw.get("editable_model", False),
+        render=render,
     )
 
 

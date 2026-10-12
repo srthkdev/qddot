@@ -1,0 +1,5 @@
+# Known controller failures
+
+- `buggy_frame_offset.py`: the right grasp waypoint applies the gripper-frame lateral offset with the opposite sign. The end effector tracks a plausible path but passes beside the cube; `cube_lifted` first fails near 2 s, with no cube contact to support the lift. Negate the lateral offset (or remove it).
+- `buggy_release_order.py`: the right gripper opens at 2.6 s, before the left gripper begins closing at 3.0 s. The cube loses secure support during handover; the first nominal failure is `left_holds_cube_at_end` at the end of the episode, with contact-end/slip events around the transfer. Keep the right gripper closed until the left has secured the cube.
+- `buggy_low_friction.py`: the pickup clamp stops at 0.008 m instead of the tighter nominal setpoint, a margin that holds at nominal friction but loses reserve under low-friction and latency perturbations. Under low-friction fuzz the cube slips during the lift or transfer. Increase the clamping margin and retain it until the receiving gripper has closed.

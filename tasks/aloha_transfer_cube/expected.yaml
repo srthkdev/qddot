@@ -1,0 +1,15 @@
+# Each entry describes one intentional controller defect.
+buggy_frame_offset:
+  first_failing_spec: cube_lifted
+  must_events: []
+  cause: sign_or_frame
+buggy_release_order:
+  first_failing_spec: left_holds_cube_at_end
+  must_events: [contact_end]
+  cause: lost_contact
+buggy_low_friction:
+  first_failing_spec: null
+  must_events: []
+  cause: lost_contact
+  fuzz_max_pass_rate: 0.9
+good_fuzz_n: 5

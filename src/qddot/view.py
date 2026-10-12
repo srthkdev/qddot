@@ -5,6 +5,8 @@ from __future__ import annotations
 import base64
 import html
 import json
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -24,29 +26,40 @@ def _render_frames(episode_dir: Path) -> list[Image.Image]:
     end_time = float(duckdb.connect(database=":memory:").execute(
         "SELECT max(t) FROM read_parquet(?)", [str(episode_dir / "signals.parquet")]
     ).fetchone()[0] or 0.0)
-    times = [float(value) for value in np.arange(0.0, end_time + 0.025, 0.05)]
+    task_path = Path(_read_json(episode_dir / "meta.json")["task_path"])
+    from qddot.task import load_task
+
+    render = load_task(task_path).render
+    fps = int(render.get("fps", 20))
+    width, height = int(render.get("width", 320)), int(render.get("height", 240))
+    times = [float(value) for value in np.arange(0.0, end_time + 0.5 / fps, 1.0 / fps)]
     from qddot.diag.replay import _resimulate, _restore_capture
 
     _, captures = _resimulate(episode_dir, times)
     frames: list[Image.Image] = []
     renderer: mujoco.Renderer | None = None
     renderer_failed = False
-    camera = mujoco.MjvCamera()
+    camera = _configured_camera(mujoco, render)
     try:
         for capture in sorted(captures.values(), key=lambda item: item["t"]):
             model, data = capture["model"], capture["data"]
             _restore_capture(capture)
+            if render:
+                _set_camera_for_model(camera, model, render)
             if not renderer_failed:
                 try:
                     if renderer is None:
-                        renderer = mujoco.Renderer(model, height=240, width=320)
-                        mujoco.mjv_defaultCamera(camera)
-                        camera.type = mujoco.mjtCamera.mjCAMERA_FREE
-                        low, high = capture["bounds"]
-                        camera.lookat[:] = (low + high) * 0.5
-                        camera.distance = max(0.4, float(np.max(high - low)) * 1.6)
-                        camera.azimuth = 135.0
-                        camera.elevation = -20.0
+                        renderer = mujoco.Renderer(model, height=height, width=width)
+                        camera_fields = {"lookat", "distance", "azimuth", "elevation"}
+                        has_free_camera = render.get("camera", "free") == "free"
+                        if not render or (has_free_camera and not camera_fields.intersection(render)):
+                            mujoco.mjv_defaultCamera(camera)
+                            camera.type = mujoco.mjtCamera.mjCAMERA_FREE
+                            low, high = capture["bounds"]
+                            camera.lookat[:] = (low + high) * 0.5
+                            camera.distance = max(0.4, float(np.max(high - low)) * 1.6)
+                            camera.azimuth = 135.0
+                            camera.elevation = -20.0
                     renderer.update_scene(data, camera)
                     frames.append(Image.fromarray(renderer.render()).convert("RGB"))
                 except Exception:  # noqa: BLE001 - Some headless systems lack a GL context.
@@ -54,9 +67,9 @@ def _render_frames(episode_dir: Path) -> list[Image.Image]:
                     if renderer is not None:
                         renderer.close()
                         renderer = None
-                    frames.append(_skeleton_frame(model, data, capture["t"]))
+                    frames.append(_skeleton_frame(model, data, capture["t"], width, height))
             else:
-                frames.append(_skeleton_frame(model, data, capture["t"]))
+                frames.append(_skeleton_frame(model, data, capture["t"], width, height))
     finally:
         if renderer is not None:
             renderer.close()
@@ -65,9 +78,34 @@ def _render_frames(episode_dir: Path) -> list[Image.Image]:
     return frames
 
 
-def _skeleton_frame(model: mujoco.MjModel, data: mujoco.MjData, t: float) -> Image.Image:
+def _configured_camera(mujoco_module: Any, render: dict[str, Any]) -> Any:
+    camera = mujoco_module.MjvCamera()
+    mujoco_module.mjv_defaultCamera(camera)
+    name = render.get("camera", "free")
+    if name == "free":
+        camera.type = mujoco_module.mjtCamera.mjCAMERA_FREE
+    else:
+        camera.type = mujoco_module.mjtCamera.mjCAMERA_FIXED
+    return camera
+
+
+def _set_camera_for_model(camera: Any, model: Any, render: dict[str, Any]) -> None:
+    name = render.get("camera", "free")
+    if name != "free":
+        camera.fixedcamid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, name)
+        if camera.fixedcamid < 0:
+            raise ValueError(f"render camera {name!r} is not present in the model")
+    if "lookat" in render:
+        camera.lookat[:] = render["lookat"]
+    for key in ("distance", "azimuth", "elevation"):
+        if key in render:
+            setattr(camera, key, float(render[key]))
+
+
+def _skeleton_frame(model: mujoco.MjModel, data: mujoco.MjData, t: float,
+                    width: int = 320, height: int = 240) -> Image.Image:
     """Draw body positions as a portable fallback when no OpenGL context exists."""
-    image = Image.new("RGB", (320, 240), "#101827")
+    image = Image.new("RGB", (width, height), "#101827")
     draw = ImageDraw.Draw(image)
     if model.nbody <= 1:
         draw.text((16, 16), "MuJoCo model", fill="#e7edf7")
@@ -77,13 +115,13 @@ def _skeleton_frame(model: mujoco.MjModel, data: mujoco.MjData, t: float) -> Ima
     zs = positions[:, 2]
     x_span = max(float(xs.max() - xs.min()), 0.1)
     z_span = max(float(zs.max() - zs.min()), 0.1)
-    scale = min(270.0 / x_span, 170.0 / z_span)
+    scale = min((width - 50.0) / x_span, (height - 70.0) / z_span)
     center_x = float(xs.min() + xs.max()) / 2
     center_z = float(zs.min() + zs.max()) / 2
 
     def pixel(body_id: int) -> tuple[float, float]:
         pos = data.xpos[body_id]
-        return 160 + (float(pos[0]) - center_x) * scale, 125 - (float(pos[2]) - center_z) * scale
+        return width / 2 + (float(pos[0]) - center_x) * scale, height * 0.52 - (float(pos[2]) - center_z) * scale
 
     for body_id in range(1, model.nbody):
         parent = int(model.body_parentid[body_id])
@@ -233,14 +271,21 @@ svg{{width:100%;height:auto}}svg text{{font:11px system-ui,sans-serif;fill:#a8b5
 </body></html>'''
 
 
-def create_view(episode_dir: str | Path, open_browser: bool = False) -> tuple[Path, Path]:
+def create_view(episode_dir: str | Path, open_browser: bool = False,
+                mp4: bool = False) -> tuple[Path, Path]:
     """Re-simulate and write a GIF plus a self-contained HTML report."""
     episode_dir = Path(episode_dir).resolve()
     verdict = _read_json(episode_dir / "verdict.json")
     frames = _render_frames(episode_dir)
     gif_path = episode_dir / "replay.gif"
-    frames[0].save(gif_path, save_all=True, append_images=frames[1:], duration=50,
+    task_path = Path(_read_json(episode_dir / "meta.json")["task_path"])
+    from qddot.task import load_task
+
+    fps = int(load_task(task_path).render.get("fps", 20))
+    frames[0].save(gif_path, save_all=True, append_images=frames[1:], duration=round(1000 / fps),
                    loop=0, optimize=False, disposal=2)
+    if mp4:
+        _write_mp4(episode_dir / "replay.mp4", frames, fps)
     events = _events(episode_dir)
     html_path = episode_dir / "replay.html"
     html_path.write_text(_build_html(episode_dir, gif_path, verdict, events), encoding="utf-8")
@@ -249,3 +294,24 @@ def create_view(episode_dir: str | Path, open_browser: bool = False) -> tuple[Pa
 
         webbrowser.open(html_path.as_uri())
     return gif_path, html_path
+
+
+def _write_mp4(path: Path, frames: list[Image.Image], fps: int) -> None:
+    """Encode RGB frames through an installed ffmpeg binary."""
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        raise RuntimeError("--mp4 requires ffmpeg on PATH")
+    width, height = frames[0].size
+    process = subprocess.Popen(
+        [ffmpeg, "-y", "-f", "rawvideo", "-vcodec", "rawvideo", "-pix_fmt", "rgb24",
+         "-s", f"{width}x{height}", "-r", str(fps), "-i", "-", "-an", "-vcodec", "libx264",
+         "-pix_fmt", "yuv420p", str(path)],
+        stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+    )
+    assert process.stdin is not None
+    for frame in frames:
+        process.stdin.write(frame.convert("RGB").tobytes())
+    process.stdin.close()
+    stderr = process.stderr.read() if process.stderr else b""
+    if process.wait() != 0:
+        raise RuntimeError(f"ffmpeg failed: {stderr.decode(errors='replace')[-1000:]}")

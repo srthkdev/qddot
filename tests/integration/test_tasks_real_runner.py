@@ -35,12 +35,13 @@ def test_builtin_controllers_real_runner(task_path: Path, tmp_path: Path) -> Non
     assert good.verdict["passed"], good.verdict
 
     fuzz_result = fuzz(
-        good_task, task_dir / "controllers/good.py", n=10, workers=1, seed=17, root=tmp_path
+        good_task, task_dir / "controllers/good.py",
+        n=int(expectations.get("good_fuzz_n", 10)), workers=1, seed=17, root=tmp_path
     )
     assert fuzz_result["pass_rate"] >= 0.9, fuzz_result
 
     for controller_name, expectation in expectations.items():
-        if controller_name in {"cause_rules", "fixed_model", "model_variants"}:
+        if controller_name in {"cause_rules", "fixed_model", "model_variants", "good_fuzz_n"}:
             continue
         result = run_episode(
             good_task,
