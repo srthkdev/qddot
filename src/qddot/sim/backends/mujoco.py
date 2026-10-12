@@ -87,6 +87,17 @@ class MujocoBackend:
         raise ValueError(f"unknown {what} reference: {name}")
 
     def contacts(self) -> list[Contact]:
+        """One contact per body pair: forces summed over its points, worst-case slip and penetration."""
+        merged: dict[tuple[int, int], Contact] = {}
+        for point in self._contact_points():
+            seen = merged.get(point.key)
+            merged[point.key] = point if seen is None else Contact(
+                seen.key, seen.a, seen.b, seen.geom_a, seen.geom_b,
+                seen.normal_force + point.normal_force, max(seen.slip_speed, point.slip_speed),
+                max(seen.penetration, point.penetration))
+        return list(merged.values())
+
+    def _contact_points(self) -> list[Contact]:
         m, d = self.model, self.data
         found = []
         force = np.zeros(6, dtype=np.float64)

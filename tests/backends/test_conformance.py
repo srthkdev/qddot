@@ -106,3 +106,13 @@ def test_deterministic(backend: str) -> None:
         _settle(sim, 0.5)
         runs.append(np.array(sim.joint_state()[0]))
     assert np.array_equal(runs[0], runs[1])
+
+
+def test_contact_force_is_measured_not_inferred(backend: str) -> None:
+    """The floor carries both stacked boxes; a per-body weight estimate would report only one."""
+    sim = load_backend(backend, str(FIXTURES / "stack.xml"))
+    sim.reset({}, 1.0, 1.0)
+    _settle(sim, 1.0)
+    by_pair = {frozenset((c.a, c.b)): c.normal_force for c in sim.contacts()}
+    assert by_pair[frozenset(("floor", "bottom"))] == pytest.approx(5.0 * 9.81, rel=0.2)
+    assert by_pair[frozenset(("bottom", "top"))] == pytest.approx(3.0 * 9.81, rel=0.2)
