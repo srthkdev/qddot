@@ -129,9 +129,14 @@ def build_workdir(
             "Missing actuators keep their prior control.\n"
         )
     model_source = (task_dir / cfg["model"]).resolve()
-    model_dest = destination / "model"
-    _copy_model_tree(model_source, model_dest if model_source.is_dir() else model_dest / model_source.name)
-    cfg["model"] = str((model_dest if model_source.is_dir() else model_dest / model_source.name).relative_to(destination))
+    if cfg.get("editable_model"):
+        # Model-repair tasks: the agent edits its own copy of the (self-contained) model.
+        model_dest = destination / "model"
+        _copy_model_tree(model_source, model_dest if model_source.is_dir() else model_dest / model_source.name)
+        cfg["model"] = str((model_dest if model_source.is_dir() else model_dest / model_source.name).relative_to(destination))
+    else:
+        # Read-only robot models (meshes, nested includes) are referenced in place.
+        cfg["model"] = str(model_source)
     (destination / "task.yaml").write_text(yaml.safe_dump(cfg, sort_keys=False))
     starter = task_dir / "controllers" / "starter.py"
     shutil.copy2(starter, destination / "controller.py") if starter.is_file() else (destination / "controller.py").write_text(CONTROLLER_STUB)
