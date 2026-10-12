@@ -118,7 +118,7 @@ The workflow is: inspect the task and its English spec read-back; run the contro
 - **Specs** are Signal Temporal Logic (STL) formulas. Robustness gives a signed margin; the witness and window point to the sample and temporal interval that determined it.
 - **Events** record meaningful transitions such as contact, joint limits, saturation, and deadline misses.
 - **Fuzz** repeats runs with reproducible physical and observation perturbations.
-- **Diagnosis** explains a failed spec (`why`), compares episodes (`diff`), re-simulates recorded controls (`replay`), and renders an offline GIF/HTML report (`view`).
+- **Diagnosis** reports *what happened* around a failed spec (`why`): signals, events and physics-only hypotheses for the agent to confirm against its code. It also compares episodes (`diff`), re-simulates recorded controls (`replay`), and renders an offline GIF/MP4/HTML report (`view`). On our seeded-bug tasks the hypotheses name the right cause first 38% of the time (top-3: 59%), because physics alone can't tell a sign error from a bad gain. That's why the facts lead and the agent decides.
 - **Memory** indexes episode failure cards (`remember`) and retrieves related failures (`similar`).
 
 ## Commands
@@ -128,7 +128,8 @@ The workflow is: inspect the task and its English spec read-back; run the contro
 | `qddot run TASK --controller FILE` | Run a controller and write an episode |
 | `qddot fuzz TASK --controller FILE [-n N] [--workers W] [--seed N]` | Run seeded perturbations |
 | `qddot check MODEL` | Static MuJoCo model checks |
-| `qddot spec TASK` | List STL requirements and English read-backs |
+| `qddot init DIR --robot so101\|ur5e\|aloha\|PATH.xml\|PATH.urdf` | Scaffold a runnable task from a robot or URDF |
+| `qddot spec TASK [--check STL] [--signals] [--eval STL --episode ID]` | List, validate or evaluate STL specs |
 | `qddot why EPISODE [--frames] [--vlm]` | Diagnose the first failing spec |
 | `qddot diff A B [--tolerance FLOAT]` | Compare signals, events, specs, and metadata |
 | `qddot replay EPISODE --at T [--frame]` | Re-simulate and inspect state at time T |
@@ -144,15 +145,51 @@ Use `--json` where supported for machine-readable output. Full options and real 
 
 ## How qddot fits
 
-Log tools such as [Foxglove](https://foxglove.dev/) and [bagel](https://github.com/foxglove/bagel) help inspect and query recorded robotics data; [Roboto](https://github.com/robotics) and similar stacks focus on observability. qddot focuses on running a controller against a task's simulator and formal requirements, then retaining replayable signals and events.
+- **Log tools.** [Foxglove](https://foxglove.dev/) (which now has an agent mode over MCP), [bagel](https://github.com/Extelligence-ai/bagel) (SQL over robot logs through MCP) and [Roboto](https://www.roboto.ai/) inspect and query *recorded* data. qddot produces that data by running your controller, and adds pass/fail specs, replay, diff and fuzz.
+- **Simulators for agents.** [OmniSim](https://github.com/omnilink-tech/omnisim) gives agents a full simulation workshop. qddot is deliberately narrower: verify and diagnose one task's controller against formal specs, locally, and deterministically.
+- **RL benchmarks and training stacks.** They measure or train policies. qddot's tasks can be exported as Gymnasium, OpenEnv or verifiers environments (see [RL environments](docs/envs.md)), but its core job is checking ordinary controller code.
 
-[OmniSim](https://github.com/OmniGibson/OmniGibson) is a simulation environment for embodied agents. qddot takes a smaller, local workflow approach around MuJoCo task files, controller code, STL verdicts, deterministic replay, comparison, and perturbation fuzzing.
+## Physics backends
 
-RL benchmarks measure learning or policy performance over benchmark-defined environments and metrics. qddot evaluates ordinary controller code against task-authored specs and exposes episode evidence for debugging. It is not an RL training suite.
+qddot's runner, events, specs and diagnosis sit on a small [`Backend`](src/qddot/sim/backend.py) protocol (~10 methods). Every backend must pass the same [conformance suite](tests/backends/test_conformance.py), which checks joints and actuators, initial state, gravity and actuation, resting and *stacked* contact forces, mass scaling, and determinism.
+
+| Backend | Status on macOS (arm64) | Notes |
+|---|---|---|
+| MuJoCo 3.15 | ✅ reference, all tests | bitwise-deterministic per version and platform |
+| Genesis 1.4 | ✅ passes conformance (CPU) | ~50× slower than MuJoCo on CPU; install in its own env (`qddot[genesis]`, conflicts with `qddot[memory]` over pillow) |
+| Newton 1.6 | ⚠️ passes except contact forces | Featherstone solver reports NaN forces rather than estimating them; MuJoCo-Warp solver in progress |
+| PyBullet | ❌ no macOS arm64 wheel for Python 3.12 | Linux untested |
+| Drake | ❌ no macOS wheels on PyPI | Linux untested |
+| Isaac Sim / Lab, Gazebo | planned | via the ROS 2 `simulation_interfaces` standard; needs Linux and NVIDIA for Isaac |
+
+Pick a backend per task with `backend: genesis` in `task.yaml`.
+
+## RL environments
+
+The same tasks, physics reward and fuzzing are available to trainers:
+
+| Export | Action | Reward |
+|---|---|---|
+| `qddot.envs.gym.ControlEnv` | actuator commands each step | spec robustness at episode end |
+| `qddot.envs.openenv.CodingEnv` | controller **source code** | verdict-shaped, reaching 1.0 at ≥90% fuzz pass |
+| `qddot.envs.verifiers.load_environment` | a code block per turn | same, re-graded on the final controller |
+
+See [docs/envs.md](docs/envs.md).
 
 ## Benchmark
 
-The separate `bench/` harness compares coding-agent conditions (`none`, `stdout`, `qddot`, and `qddot_memory`) on public and held-out tasks. It grades nominal behavior, hidden-seed fuzz robustness, control metrics, and false-done claims. Every trial gets a fresh workdir; reference controllers and hidden failure notes are withheld. The current `qddot_memory` condition is reserved and receives the same tools as `qddot`. **Benchmark results coming soon.** See [Benchmark](docs/benchmark.md) and [bench/README.md](bench/README.md).
+`bench/` runs real coding agents headless (Claude Code, Codex, opencode) on the tasks under four conditions: no simulator, a print-only `sim.py`, qddot (CLI + MCP + skill), and qddot with memory. It grades:
+- the final controller on hidden seeds (nominal pass, and fuzz pass rate ≥ 90%);
+- control quality;
+- **false-done**: the agent claimed success but the grader says otherwise.
+
+Isolation is enforced, not assumed:
+- workdirs are self-contained copies with no paths back into the repo;
+- agents get qddot from an install outside the repo;
+- reference controllers, seeded bugs and their bytecode are made unreadable during runs;
+- every transcript is audited for attempts to reach them.
+
+An early pilot was discarded after the audit caught an agent reading a reference controller. **Results: in progress.** See [docs/benchmark.md](docs/benchmark.md).
 
 ## Performance
 
