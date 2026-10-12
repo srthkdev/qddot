@@ -65,6 +65,9 @@ def _condition_files(dest: Path, condition: str, repo_root: Path) -> None:
             skill_dest = dest / "skills" / "qddot"
             skill_dest.mkdir(parents=True, exist_ok=True)
             shutil.copy2(skill, skill_dest / "SKILL.md")
+            # Claude Code discovers project skills natively under .claude/skills.
+            native = dest / ".claude" / "skills" / "qddot"
+            shutil.copytree(skill.parent, native, dirs_exist_ok=True)
     else:
         raise ValueError(f"Unknown condition: {condition}")
 

@@ -33,13 +33,45 @@ def _row_key(row: dict) -> tuple:
     return cfg["task"], cfg["agent"], cfg["condition"], cfg["seed"]
 
 
+_CONDITION_LINES = {
+    "none": "You cannot run a simulator in this environment. Reason carefully about the code.",
+    "stdout": "You can simulate once with `{python} sim.py`; it prints only final values.",
+    "qddot": ("Use the qddot CLI (`{qddot}`) to run, check, debug and fuzz your controller. "
+              "See CONDITION.md and skills/qddot/SKILL.md."),
+}
+
+
+def compose_prompt(task_prompt: str, condition: str, repo_root: Path) -> str:
+    """Wrap a task's PROMPT.md with the shared setup instructions for a condition."""
+    venv = repo_root / ".venv" / "bin"
+    line = _CONDITION_LINES.get(condition, _CONDITION_LINES["qddot"])
+    line = line.format(python=venv / "python", qddot=venv / "qddot")
+    return (
+        f"{task_prompt.strip()}\n\n"
+        "## Setup\n"
+        "- Implement `class Controller` in `controller.py` in this directory. Its docstring lists "
+        "the observation keys, actuators and `info` contents.\n"
+        "- `task.yaml` describes the robot model, duration, control rate and acceptance specs.\n"
+        f"- {line}\n"
+        "- When you finish, end with a short summary that states clearly whether your controller "
+        "satisfies the task.\n"
+    )
+
+
 def _run_trial(task_dir: Path, agent: AgentSpec, condition: Condition, seed: int, repo_root: Path, budget: dict[str, Any]) -> dict:
     import importlib
 
     adapter = importlib.import_module(f"bench.agents.{agent.adapter}")
     workdir = build_workdir(task_dir, condition.name, repo_root=repo_root)
-    prompt = (workdir / "PROMPT.md").read_text()
-    result = adapter.run_agent(workdir, prompt, agent.model, budget)
+    prompt = compose_prompt((workdir / "PROMPT.md").read_text(), condition.name, repo_root)
+    trial_budget = dict(budget)
+    if condition.name in {"qddot", "qddot_memory"}:
+        qddot_cli = str(repo_root / ".venv" / "bin" / "qddot")
+        server = {"command": qddot_cli, "args": ["mcp"]}
+        mcp_config = workdir / ".mcp.qddot.json"
+        mcp_config.write_text(json.dumps({"mcpServers": {"qddot": server}}))
+        trial_budget.update(mcp_config=str(mcp_config), mcp_server=server)
+    result = adapter.run_agent(workdir, prompt, agent.model, trial_budget)
     graded = grade(task_dir, workdir / "controller.py", seed + 100_000, int(budget.get("n_fuzz", 50)))
     add_false_done(graded, result.final_message)
     return {**graded, "agent_result": {"final_message": result.final_message, "transcript_path": str(result.transcript_path), "wall_s": result.wall_s, "tokens_in": result.tokens_in, "tokens_out": result.tokens_out, "cost_usd": result.cost_usd, "exit_code": result.exit_code}, "config": {"task": task_dir.name, "agent": agent.key, "adapter": agent.adapter, "model": agent.model, "extra_args": list(agent.extra_args), "condition": condition.name, "seed": seed, "budget": budget}}

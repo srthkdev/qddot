@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 256" role="img" aria-label="qddot">
+  <defs>
+    <linearGradient id="q" gradientUnits="userSpaceOnUse" x1="0" y1="90" x2="0" y2="215">
+      <stop offset="0" stop-color="#7fe0ff"/>
+      <stop offset="1" stop-color="#3aa8d8"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(0,0)">
+    <circle cx="116" cy="146" r="46" fill="none" stroke="url(#q)" stroke-width="22"/>
+    <path d="M162 110 V212" stroke="url(#q)" stroke-width="22" stroke-linecap="round"/>
+    <circle cx="162" cy="214" r="13" fill="#0d121b" stroke="#ff9f43" stroke-width="7"/>
+    <path d="M96 62 L146 50" stroke="#ff9f43" stroke-width="7" stroke-linecap="round" opacity="0.55"/>
+    <circle cx="96" cy="62" r="13" fill="#ff9f43"/>
+    <circle cx="146" cy="50" r="13" fill="#ff9f43"/>
+  </g>
+  <text x="220" y="178" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="132" font-weight="700" fill="#e8eef7" letter-spacing="-4">qddot</text>
+</svg>

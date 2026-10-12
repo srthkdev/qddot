@@ -23,6 +23,9 @@ def main() -> None:
     run_parser.add_argument("--jobs", type=int, default=1)
     run_parser.add_argument("--run-id")
     run_parser.add_argument("--n-fuzz", type=int, default=50)
+    run_parser.add_argument("--timeout-s", type=float, default=900)
+    run_parser.add_argument("--max-usd", type=float, default=None,
+                            help="Per-trial spend cap where the agent CLI supports it")
     grade_parser = sub.add_parser("grade")
     grade_parser.add_argument("task", type=Path)
     grade_parser.add_argument("controller", type=Path)
@@ -38,7 +41,8 @@ def main() -> None:
         plan = RunPlan(tasks, parse_agents(args.agents), [Condition(name) for name in args.conditions.split(",")], list(range(args.seeds)), jobs=args.jobs, private=args.private)
         if args.run_id:
             plan.run_id = args.run_id
-        run_plan(plan, repo_root, yes=args.yes, dry_run=not args.yes, budget={"n_fuzz": args.n_fuzz})
+        run_plan(plan, repo_root, yes=args.yes, dry_run=not args.yes, budget={"n_fuzz": args.n_fuzz, "timeout_s": args.timeout_s,
+                                                                   "max_budget_usd": args.max_usd})
     elif args.command == "grade":
         import json
 

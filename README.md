@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/brand/wordmark.svg" width="420" alt="qddot"></p>
+
 # qddot (q̈, joint acceleration)
 
 **Playwright for robot code:** run, check, and debug robot controllers in physics before an agent claims the task is done.
