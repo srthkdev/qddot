@@ -9,8 +9,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-import yaml
 import numpy as np
+import yaml
 
 from qddot.diag import why
 from qddot.sim.fuzz import fuzz
@@ -29,6 +29,10 @@ def _cached_episode(root: Path, expected_id: str | None = None) -> Path | None:
         for path in exact:
             if (path / "verdict.json").is_file():
                 return path
+    else:
+        cached = next(root.rglob("verdict.json"), None)
+        if cached is not None:
+            return cached.parent
     return None
 
 
@@ -183,6 +187,13 @@ def _print_report(label: str, report: dict[str, Any]) -> None:
         print("Good controller checks: all nominal runs PASS with no causes")
 
 
+def _json_report(report: dict[str, Any]) -> dict[str, Any]:
+    result = {key: value for key, value in report.items() if key != "confusion"}
+    result["confusion"] = {f"{expected} -> {predicted}": count
+                           for (expected, predicted), count in report["confusion"].items()}
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--private", action="store_true", help="evaluate QDDOT_TASKS_DIR")
@@ -192,13 +203,15 @@ def main() -> None:
     if args.private:
         report = evaluate(PRIVATE_TASKS, DEFAULT_CACHE, not args.cached_only)
         _print_report("PRIVATE TASKS", report)
+        reports = {"private": report}
     else:
-        report = evaluate(PUBLIC_TASKS, DEFAULT_CACHE, not args.cached_only)
-        _print_report("PUBLIC TASKS", report)
+        public_report = evaluate(PUBLIC_TASKS, DEFAULT_CACHE, not args.cached_only)
+        _print_report("PUBLIC TASKS", public_report)
         private_report = evaluate(PRIVATE_TASKS, DEFAULT_CACHE, not args.cached_only)
         _print_report("PRIVATE HELD-OUT CHECK", private_report)
+        reports = {"public": public_report, "private": private_report}
     if args.json:
-        print(json.dumps(report, indent=2, default=lambda value: dict(value)))
+        print(json.dumps({key: _json_report(value) for key, value in reports.items()}, indent=2))
 
 
 if __name__ == "__main__":
