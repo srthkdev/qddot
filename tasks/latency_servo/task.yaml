@@ -1,0 +1,17 @@
+name: latency_servo
+description: Track a commanded joint step under variable sensor delay.
+model: model.xml
+duration: 3.3
+control_dt: 0.01
+init: {qpos: {servo: 0.0}}
+target: {position: 0.35}
+perturb:
+  latency_ms: [0, 40]
+  obs_noise_std: 0.0002
+specs:
+  - name: track_step
+    stl: "eventually[0.25,2.5](always[0,0.6](abs(joint.servo.pos - 0.35) < 0.07))"
+  - name: bounded_overshoot
+    stl: "always[0,2.5](joint.servo.pos < 0.46)"
+  - name: no_joint_stop
+    stl: "always(abs(joint.servo.pos) < 0.95)"

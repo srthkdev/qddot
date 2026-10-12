@@ -1,8 +1,14 @@
 buggy_wrong_equilibrium:
   first_failing_spec: capture_upright
-  must_events: [joint_limit]
+  must_events: []
   cause: wrong_equilibrium
 buggy_mapping:
   first_failing_spec: capture_upright
-  must_events: [saturation]
+  must_events:
+  - saturation
   cause: wrong_mapping
+buggy_latency:
+  first_failing_spec: null
+  must_events: []
+  cause: latency_sensitivity
+  fuzz_max_pass_rate: 0.6

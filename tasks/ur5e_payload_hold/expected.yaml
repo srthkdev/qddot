@@ -1,0 +1,9 @@
+buggy_missing_compensation:
+  first_failing_spec: payload_pose
+  must_events: []
+  cause: missing_compensation
+buggy_fragile_gain:
+  first_failing_spec: null
+  must_events: []
+  cause: gain_instability
+  fuzz_max_pass_rate: 0.6

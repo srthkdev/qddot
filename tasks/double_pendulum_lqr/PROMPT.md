@@ -1,0 +1,1 @@
+Stabilize the two-link pendulum near its upright configuration for the full episode. The shoulder and elbow motors have different torque limits, and the initial state is slightly displaced. Keep both links within the specified safe workspace while recovering quickly.

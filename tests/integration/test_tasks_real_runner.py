@@ -18,7 +18,9 @@ ROOT = Path(__file__).resolve().parents[2]
 TASKS = Path(os.environ.get("QDDOT_TASKS_DIR", ROOT / "tasks")).resolve()
 
 
-@pytest.mark.parametrize("task_path", sorted(TASKS.glob("*/task.yaml")), ids=lambda path: path.parent.name)
+@pytest.mark.parametrize(
+    "task_path", sorted(TASKS.glob("*/task.yaml")), ids=lambda path: path.parent.name
+)
 def test_builtin_controllers_real_runner(task_path: Path, tmp_path: Path) -> None:
     task_dir = task_path.parent
     task = load_task(task_path)
@@ -27,21 +29,35 @@ def test_builtin_controllers_real_runner(task_path: Path, tmp_path: Path) -> Non
     good_task = copy.copy(task)
     if fixed_model:
         good_task.model_path = (task_dir / fixed_model).resolve()
-    good = run_episode(good_task, task_dir / "controllers/good.py", root=tmp_path, record_mcap=False)
+    good = run_episode(
+        good_task, task_dir / "controllers/good.py", root=tmp_path, record_mcap=False
+    )
     assert good.verdict["passed"], good.verdict
 
-    fuzz_result = fuzz(good_task, task_dir / "controllers/good.py", n=10, workers=1, seed=17, root=tmp_path)
+    fuzz_result = fuzz(
+        good_task, task_dir / "controllers/good.py", n=10, workers=1, seed=17, root=tmp_path
+    )
     assert fuzz_result["pass_rate"] >= 0.9, fuzz_result
 
     for controller_name, expectation in expectations.items():
         if controller_name in {"cause_rules", "fixed_model", "model_variants"}:
             continue
-        result = run_episode(good_task, task_dir / "controllers" / f"{controller_name}.py", root=tmp_path,
-                             record_mcap=False)
+        result = run_episode(
+            good_task,
+            task_dir / "controllers" / f"{controller_name}.py",
+            root=tmp_path,
+            record_mcap=False,
+        )
         if "fuzz_max_pass_rate" in expectation:
             assert result.verdict["passed"], result.verdict
-            fuzz_result = fuzz(good_task, task_dir / "controllers" / f"{controller_name}.py",
-                               n=10, workers=1, seed=17, root=tmp_path)
+            fuzz_result = fuzz(
+                good_task,
+                task_dir / "controllers" / f"{controller_name}.py",
+                n=10,
+                workers=1,
+                seed=17,
+                root=tmp_path,
+            )
             assert fuzz_result["pass_rate"] <= expectation["fuzz_max_pass_rate"], fuzz_result
             continue
         assert not result.verdict["passed"], result.verdict
@@ -54,8 +70,11 @@ def test_builtin_controllers_real_runner(task_path: Path, tmp_path: Path) -> Non
         variant_task = copy.copy(task)
         variant_task.model_path = (task_dir / model_name).resolve()
         if expectation.get("check_errors") is not None:
-            errors = [item for item in check_model(variant_task.model_path) if item["severity"] == "error"]
+            errors = [
+                item for item in check_model(variant_task.model_path) if item["severity"] == "error"
+            ]
             assert len(errors) == expectation["check_errors"], errors
-        result = run_episode(variant_task, task_dir / "controllers/good.py", root=tmp_path,
-                             record_mcap=False)
+        result = run_episode(
+            variant_task, task_dir / "controllers/good.py", root=tmp_path, record_mcap=False
+        )
         assert result.verdict["passed"] is expectation["passed"], result.verdict

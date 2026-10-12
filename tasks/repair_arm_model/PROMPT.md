@@ -1,0 +1,1 @@
+Repair the supplied two-link arm model so the provided trajectory controller can reach the target and settle without exceeding joint or actuator limits. Keep the controller unchanged; edit `model.xml`. The mechanism is a planar shoulder-and-elbow arm with torque actuators. Verify the geometry and dynamics, and preserve the 20 ms controller period.

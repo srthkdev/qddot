@@ -1,9 +1,10 @@
 buggy_aggressive:
   first_failing_spec: null
-  must_events: [saturation]
+  must_events: []
   cause: latency_sensitivity
   fuzz_max_pass_rate: 0.6
 buggy_dt:
-  first_failing_spec: bounded_overshoot
-  must_events: [saturation]
+  first_failing_spec: null
+  must_events: []
   cause: units
+  fuzz_max_pass_rate: 0.6

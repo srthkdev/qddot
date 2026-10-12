@@ -1,0 +1,24 @@
+name: repair_gripper_model
+description: Grip and lift a small block with a parallel jaw gripper.
+model: model.xml
+editable_model: true
+duration: 3.0
+control_dt: 0.02
+target: {x: 0, y: 0, z: 0.16}
+signals:
+  - {name: block_z, kind: body_pos, ref: block, axis: z}
+contact_pairs:
+  - {name: pads_block, a: [left_finger, right_finger], b: [block]}
+perturb:
+  mass_scale: [0.95, 1.05]
+  friction_scale: [0.20, 1.15]
+  obs_noise_std: 0.0001
+  latency_ms: [0, 10]
+  jitter_ms: 0
+specs:
+  - name: lift_block
+    stl: "eventually[1,2.5](always[0,0.5](block_z > 0.12))"
+  - name: establish_grasp
+    stl: "eventually[0,1.5](col_pads_block > 0.5)"
+  - name: no_actuator_saturation
+    stl: "always(ev.saturation < 0.5)"

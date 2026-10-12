@@ -1,0 +1,17 @@
+<mujoco model="parallel_gripper_pick">
+  <visual><headlight ambient="0.35 0.35 0.35" diffuse="0.62 0.62 0.62" specular="0.12 0.12 0.12"/></visual>
+
+<option timestep="0.002" gravity="0 0 -9.81" integrator="implicitfast"/><default><joint damping="1.0" armature="0.01"/><geom friction="0.015 0.001 0.0001" solref="0.008 1" condim="1"/></default>
+<asset>
+    <texture name="qddot_sky" type="skybox" builtin="gradient" rgb1="0.32 0.43 0.56" rgb2="0.07 0.10 0.15" width="256" height="256"/>
+    <texture name="qddot_grid_tex" type="2d" builtin="checker" rgb1="0.20 0.23 0.27" rgb2="0.29 0.33 0.38" width="300" height="300" mark="edge" markrgb="0.48 0.54 0.60"/>
+    <material name="qddot_grid" texture="qddot_grid_tex" texrepeat="8 8" reflectance="0.12"/>
+    <material name="qddot_robot_teal" rgba="0.12 0.48 0.56 1"/>
+    <material name="qddot_robot_blue" rgba="0.18 0.30 0.60 1"/>
+    <material name="qddot_robot_orange" rgba="0.88 0.39 0.12 1"/>
+  </asset>
+<worldbody><light name="qddot_key" pos="-2 -3 4" dir="0.3 0.4 -1" diffuse="0.85 0.85 0.85" specular="0.25 0.25 0.25"/><geom name="floor" type="plane" pos="0 0 0" size="1 1 0.1" rgba="0.25 0.27 0.3 1" material="qddot_grid"/><body name="lift" pos="0 0 0.05"><joint name="lift_z" type="slide" axis="0 0 1" range="0 0.18"/><geom name="carriage" type="box" pos="0 0 0.12" size="0.10 0.06 0.015" mass="0.35" contype="0" conaffinity="0" material="qddot_robot_teal"/>
+<body name="left_finger" pos="-0.095 0 0"><joint name="left_close" type="slide" axis="1 0 0" range="0 0.065"/><geom name="left_pad" type="box" pos="0 0 0.04" size="0.012 0.035 0.045" mass="0.12" material="qddot_robot_blue"/></body>
+<body name="right_finger" pos="0.095 0 0"><joint name="right_close" type="slide" axis="-1 0 0" range="0 0.065"/><geom name="right_pad" type="box" pos="0 0 0.04" size="0.012 0.035 0.045" mass="0.12" material="qddot_robot_orange"/></body></body>
+<body name="block" pos="0 0 0.035"><freejoint name="block_free"/><geom name="block_geom" type="box" size="0.032 0.032 0.035" mass="0.22" rgba="0.8 0.35 0.1 1" material="qddot_robot_teal"/></body><site name="grasp_center" pos="0 0 0.07" size="0.008"/></worldbody>
+<actuator><position name="lift" joint="lift_z" kp="220" kv="22" ctrlrange="0 0.24"/><position name="left_close" joint="left_close" kp="500" kv="15" ctrlrange="0 0.065"/><position name="right_close" joint="right_close" kp="500" kv="15" ctrlrange="0 0.065"/></actuator></mujoco>

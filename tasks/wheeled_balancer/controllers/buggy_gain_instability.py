@@ -1,0 +1,17 @@
+"""Cascaded position and pitch feedback for the mobile balancer."""
+import numpy as np
+
+
+class Controller:
+    def reset(self, info: dict)->None:
+        self.target=float(info["target"].get("position",0.5)); self.dt=float(info["control_dt"])
+        self.travel_kp=1.8; self.travel_kd=2.2; self.pitch_kp=150.0; self.pitch_kd=12.0; self.max_force=12.5
+
+    def step(self, obs: dict[str,float], t: float)->dict[str,float]:
+        x=obs["joint.travel.pos"]; xd=obs["joint.travel.vel"]
+        pitch=obs["joint.pitch.pos"]; pitch_rate=obs["joint.pitch.vel"]
+        requested_lean=float(np.clip(self.travel_kp*(self.target-x)-self.travel_kd*xd,-0.11,0.11))
+        # BUG: pitch-rate feedback has the wrong sign, adding energy during recovery.
+        torque=self.pitch_kp*(requested_lean-pitch)--3.0*pitch_rate
+        torque=float(np.clip(torque,-self.max_force,self.max_force))
+        return {"left_drive":torque,"right_drive":torque}

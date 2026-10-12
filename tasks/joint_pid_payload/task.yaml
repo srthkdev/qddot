@@ -1,0 +1,18 @@
+name: joint_pid_payload
+description: Move a gravity-loaded arm through a position step and settle with an uncertain tool payload.
+model: model.xml
+duration: 4.0
+control_dt: 0.01
+init: {qpos: {shoulder: -0.8}}
+target: {position: 1.4}
+perturb:
+  latency_ms: [0, 30]
+  mass_scale: [0.85, 1.2]
+  obs_noise_std: 0.0005
+specs:
+  - name: overshoot_bound
+    stl: "always[0,3](joint.shoulder.pos < 1.47)"
+  - name: settle_and_hold
+    stl: "eventually[1,2.5](always[0,1](abs(joint.shoulder.pos - 1.4) < 0.035))"
+  - name: avoid_prolonged_saturation
+    stl: "always[0,4](eventually[0,0.2](ev.saturation < 0.5))"

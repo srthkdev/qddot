@@ -1,0 +1,24 @@
+name: repair_arm_model
+description: Identify and correct the dynamic model defect so a two-link arm can track and hold its target.
+model: model.xml
+editable_model: true
+duration: 3.0
+control_dt: 0.02
+target: {x: 0.466, y: 0.299, z: 0.35}
+signals:
+  - {name: tool_x, kind: site_pos, ref: tool, axis: x}
+  - {name: tool_y, kind: site_pos, ref: tool, axis: y}
+  - {name: tool_error, kind: distance, ref: tool, to: target}
+perturb:
+  mass_scale: [0.9, 1.1]
+  friction_scale: [0.9, 1.1]
+  obs_noise_std: 0.0002
+  latency_ms: [0, 60]
+  jitter_ms: 0
+specs:
+  - name: target_reached
+    stl: "eventually[0,2](always[0,1](tool_error < 0.025))"
+  - name: joint_safe
+    stl: "always(abs(joint.shoulder_pan.pos) < 1.15 and abs(joint.elbow_flex.pos) < 2.15)"
+  - name: no_saturation
+    stl: "always(ev.saturation < 0.5)"

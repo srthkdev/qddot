@@ -13,7 +13,7 @@ perturb:
   friction_scale: [0.9, 1.1]
   mass_scale: [0.95, 1.05]
   obs_noise_std: 0.001
-  latency_ms: [0, 20]
+  latency_ms: [0, 50]
   jitter_ms: 2
 specs:
   - name: pan_settle

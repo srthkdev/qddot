@@ -1,0 +1,12 @@
+name: ur5e_payload_hold
+description: Move an attached 2 kg payload between two poses and hold.
+model: model.xml
+duration: 5.0
+control_dt: 0.02
+init: {keyframe: home}
+target: {shoulder_pan_joint: -1.25, shoulder_lift_joint: -1.20, elbow_joint: 1.35, wrist_1_joint: -1.70, wrist_2_joint: -1.55, wrist_3_joint: 0.0}
+perturb: {friction_scale: [0.95, 1.05], mass_scale: [0.85, 1.15], obs_noise_std: 0.0002, latency_ms: [0, 0], jitter_ms: 0}
+specs:
+  - {name: payload_pose, stl: "eventually[2,3](always[0,1](abs(joint.shoulder_lift_joint.pos - (-1.20)) < 0.06))"}
+  - {name: payload_stability, stl: "always[3,5](abs(joint.shoulder_lift_joint.vel) < 0.08)"}
+  - {name: no_joint_limit, stl: "always(ev.joint_limit < 0.5)"}

@@ -1,0 +1,23 @@
+name: diffdrive_waypoints
+description: Drive a mobile robot through three ordered waypoints around a physical box obstacle.
+model: model.xml
+duration: 6.0
+control_dt: 0.01
+init: {qpos: {base_x: -0.82, base_y: -0.43, yaw: 3.05}}
+target: {x: 0.0, y: 0.0, z: 0.12}
+signals:
+  - {name: robot_x, kind: site_pos, ref: pose, axis: x}
+  - {name: robot_y, kind: site_pos, ref: pose, axis: y}
+contact_pairs:
+  - {name: robot_obstacle, a: [robot], b: [obstacle]}
+perturb:
+  latency_ms: [0, 100]
+  friction_scale: [0.85, 1.15]
+  obs_noise_std: 0.001
+specs:
+  - name: waypoint_one
+    stl: "eventually[0.5,1.8](abs(robot_x - 0.35) < 0.18 and abs(robot_y - 0.55) < 0.18)"
+  - name: waypoint_two
+    stl: "eventually[1.5,3.8](abs(robot_x + 0.20) < 0.22 and abs(robot_y - 0.55) < 0.22)"
+  - name: waypoint_three_and_safe
+    stl: "eventually[3.5,6.0](abs(robot_x + 0.90) < 0.20 and abs(robot_y - 0.55) < 0.20) and always(col_robot_obstacle < 0.5) and always(abs(robot_x) < 1.45 and abs(robot_y) < 1.05)"

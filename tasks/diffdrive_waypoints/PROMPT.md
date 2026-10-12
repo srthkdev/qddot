@@ -1,0 +1,1 @@
+Implement navigation for the differential-drive base. Visit the three map coordinates in order, pass the fixed box without contact, and remain inside the arena. The robot has driven left and right wheels, a passive caster, and a bounded heading trim actuator; finish at the final waypoint before the episode ends.

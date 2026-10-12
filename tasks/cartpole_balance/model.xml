@@ -14,7 +14,7 @@
     <joint damping="0.08" armature="0.01" />
     <geom friction="0.8 0.01 0.001" solref="0.01 1" />
   </default>
-  <worldbody>
+  <worldbody><light name="qddot_key" pos="-2 -3 4" dir="0.3 0.4 -1" diffuse="0.85 0.85 0.85" specular="0.25 0.25 0.25"/>
     <light name="key" pos="0.5 -1.5 2.5" dir="-0.2 0.5 -1" diffuse="0.8 0.8 0.8" />
     <geom name="floor" type="plane" pos="0 0 -0.08" size="2 0.2 0.1" material="grid" />
     <body name="cart" pos="0 0 0">

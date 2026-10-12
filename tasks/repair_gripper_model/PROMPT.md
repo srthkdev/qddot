@@ -1,0 +1,1 @@
+Repair the parallel jaw gripper model so the supplied pick sequence can close on the block, maintain a stable grasp, and lift it clear of the table. Edit `model.xml`; the controller and grasp sequence are fixed. Keep both finger slides symmetric and preserve the 20 ms control period.

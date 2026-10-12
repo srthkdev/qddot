@@ -1,0 +1,18 @@
+<mujoco model="fast servo">
+  <visual><headlight ambient="0.35 0.35 0.35" diffuse="0.62 0.62 0.62" specular="0.12 0.12 0.12"/></visual>
+
+<compiler angle="radian"/>
+<option timestep="0.001" gravity="0 0 0" integrator="implicitfast"/>
+<default><joint damping="0.18" armature="0.03"/><geom friction="0.8 0.01 0.001"/></default>
+<asset>
+    <texture name="qddot_sky" type="skybox" builtin="gradient" rgb1="0.32 0.43 0.56" rgb2="0.07 0.10 0.15" width="256" height="256"/>
+    <texture name="qddot_grid_tex" type="2d" builtin="checker" rgb1="0.20 0.23 0.27" rgb2="0.29 0.33 0.38" width="300" height="300" mark="edge" markrgb="0.48 0.54 0.60"/>
+    <material name="qddot_grid" texture="qddot_grid_tex" texrepeat="8 8" reflectance="0.12"/>
+    <material name="qddot_robot_teal" rgba="0.12 0.48 0.56 1"/>
+    <material name="qddot_robot_blue" rgba="0.18 0.30 0.60 1"/>
+    <material name="qddot_robot_orange" rgba="0.88 0.39 0.12 1"/>
+  </asset>
+<worldbody><light name="qddot_key" pos="-2 -3 4" dir="0.3 0.4 -1" diffuse="0.85 0.85 0.85" specular="0.25 0.25 0.25"/><geom name="floor" type="plane" pos="0 0 -0.1" size="2 2 0.1" material="qddot_grid"/>
+<body name="servo_link"><joint name="servo" type="hinge" axis="0 -1 0" range="-1.0 1.0" limited="true" damping="0.12"/><geom name="rotor" type="capsule" fromto="0 0 0 0.32 0 0" size="0.045" mass="0.55" material="qddot_robot_teal"/><geom name="load" type="sphere" pos="0.32 0 0" size="0.065" mass="0.25" material="qddot_robot_blue"/></body></worldbody>
+<actuator><motor name="servo_motor" joint="servo" ctrlrange="-8 8" gear="1"/></actuator>
+</mujoco>

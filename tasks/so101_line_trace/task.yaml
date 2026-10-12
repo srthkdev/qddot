@@ -1,0 +1,18 @@
+name: so101_line_trace
+description: Trace a 10 cm Cartesian line in two seconds and hold.
+model: model.xml
+duration: 3.5
+control_dt: 0.02
+target: {x: 0.391, y: 0.099, z: 0.246, start_y: -0.001}
+signals:
+  - {name: ee_x, kind: site_pos, ref: gripperframe, axis: x}
+  - {name: ee_y, kind: site_pos, ref: gripperframe, axis: y}
+  - {name: ee_z, kind: site_pos, ref: gripperframe, axis: z}
+contact_pairs:
+  - {name: arm_floor, a: [shoulder, upper_arm, lower_arm, wrist, gripper], b: [floor]}
+perturb: {friction_scale: [0.9, 1.1], mass_scale: [0.95, 1.05], obs_noise_std: 0.0005, latency_ms: [0, 100], jitter_ms: 0}
+specs:
+  - {name: start_point, stl: "always[0,0.08](abs(ee_y - (-0.001)) < 0.01)"}
+  - {name: midline_waypoint, stl: "eventually[0.92,1.08](abs(ee_y - 0.049) < 0.01)"}
+  - {name: final_hold, stl: "eventually[2.4,2.5](always[0,1](abs(ee_y - 0.099) < 0.01))"}
+  - {name: no_joint_limit, stl: "always(ev.joint_limit < 0.5)"}

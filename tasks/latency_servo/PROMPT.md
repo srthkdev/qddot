@@ -1,0 +1,1 @@
+Write a servo controller that moves the joint from zero to 0.55 rad and holds it. The position sensor may be delayed by up to 40 ms, so track promptly without overshoot or striking the mechanical limits.

@@ -1,0 +1,1 @@
+Develop a feedback controller for the two-wheel balancing platform. Recover from its initial pitch error, travel 0.5 m along the axle direction, then settle at the requested position. Respect the available motor torque and keep the body upright throughout the run.

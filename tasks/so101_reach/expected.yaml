@@ -3,12 +3,17 @@ buggy_jacobian_sign:
   must_events:
   - saturation
   - collision
-  cause: sign_frame
+  cause: sign_or_frame
 buggy_limit_avoidance:
   first_failing_spec: no_joint_limit
   must_events:
   - joint_limit
-  cause: limit_guard
+  cause: joint_limit
 cause_rules:
   sign_frame: divergence
   limit_guard: joint_limit
+buggy_latency:
+  first_failing_spec: null
+  must_events: []
+  cause: latency_sensitivity
+  fuzz_max_pass_rate: 0.6

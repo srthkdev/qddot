@@ -1,0 +1,22 @@
+<mujoco model="two link acrobot">
+  <visual><headlight ambient="0.35 0.35 0.35" diffuse="0.62 0.62 0.62" specular="0.12 0.12 0.12"/></visual>
+
+<compiler angle="radian"/>
+<option timestep="0.002" gravity="0 0 -9.81" integrator="implicitfast"/>
+<default><joint damping="0.08" armature="0.015"/><geom friction="0.7 0.01 0.001"/></default>
+<asset>
+    <texture name="qddot_sky" type="skybox" builtin="gradient" rgb1="0.32 0.43 0.56" rgb2="0.07 0.10 0.15" width="256" height="256"/>
+    <texture name="qddot_grid_tex" type="2d" builtin="checker" rgb1="0.20 0.23 0.27" rgb2="0.29 0.33 0.38" width="300" height="300" mark="edge" markrgb="0.48 0.54 0.60"/>
+    <material name="qddot_grid" texture="qddot_grid_tex" texrepeat="8 8" reflectance="0.12"/>
+    <material name="qddot_robot_teal" rgba="0.12 0.48 0.56 1"/>
+    <material name="qddot_robot_blue" rgba="0.18 0.30 0.60 1"/>
+    <material name="qddot_robot_orange" rgba="0.88 0.39 0.12 1"/>
+  </asset>
+<worldbody><light name="qddot_key" pos="-2 -3 4" dir="0.3 0.4 -1" diffuse="0.85 0.85 0.85" specular="0.25 0.25 0.25"/><geom name="floor" type="plane" pos="0 0 -1.5" size="3 3 0.1" material="qddot_grid"/>
+<body name="shoulder" pos="0 0 0.9"><joint name="shoulder" type="hinge" axis="0 1 0" range="-1.4 1.4" limited="true"/>
+<geom name="upper_link" type="capsule" fromto="0 0 0 0 0 0.55" size="0.045" mass="1.1" material="qddot_robot_teal"/>
+<body name="elbow" pos="0 0 0.55"><joint name="elbow" type="hinge" axis="0 1 0" range="-2.0 2.0" limited="true"/>
+<geom name="lower_link" type="capsule" fromto="0 0 0 0 0 0.48" size="0.035" mass="0.7" material="qddot_robot_blue"/>
+<geom name="tip_mass" type="sphere" pos="0 0 0.48" size="0.07" mass="0.45" material="qddot_robot_orange"/></body></body></worldbody>
+<actuator><motor name="shoulder_motor" joint="shoulder" ctrlrange="-24 24"/><motor name="elbow_motor" joint="elbow" ctrlrange="-12 12"/></actuator>
+</mujoco>

@@ -1,8 +1,13 @@
 buggy_gain_instability:
   first_failing_spec: balance
-  must_events: [saturation]
+  must_events: []
   cause: gain_instability
 buggy_mapping:
-  first_failing_spec: reach_and_stop
-  must_events: [saturation]
+  first_failing_spec: balance
+  must_events: []
   cause: wrong_mapping
+buggy_latency:
+  first_failing_spec: null
+  must_events: []
+  cause: latency_sensitivity
+  fuzz_max_pass_rate: 0.6

@@ -1,0 +1,19 @@
+name: ur5e_cartesian_reach
+description: Reach and hold a Cartesian target with the UR5e.
+model: model.xml
+duration: 5.0
+control_dt: 0.02
+init: {keyframe: home}
+target: {x: -0.05, y: 0.40, z: 0.48}
+signals:
+  - {name: ee_x, kind: site_pos, ref: tool_flange, axis: x}
+  - {name: ee_y, kind: site_pos, ref: tool_flange, axis: y}
+  - {name: ee_z, kind: site_pos, ref: tool_flange, axis: z}
+  - {name: dist_ee_target, kind: distance, ref: tool_flange, to: target}
+contact_pairs:
+  - {name: arm_floor, a: [shoulder_link, upper_arm_link, forearm_link, wrist_1_link, wrist_2_link, wrist_3_link], b: [floor]}
+perturb: {friction_scale: [0.95, 1.05], mass_scale: [0.97, 1.03], obs_noise_std: 0.0003, latency_ms: [0, 60], jitter_ms: 0}
+specs:
+  - {name: reach_hold, stl: "eventually[1.5,3](always[0,1](dist_ee_target < 0.02))"}
+  - {name: no_joint_limit, stl: "always(ev.joint_limit < 0.5)"}
+  - {name: no_table_collision, stl: "always(col_arm_floor < 0.5)"}

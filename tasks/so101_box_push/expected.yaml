@@ -1,0 +1,15 @@
+buggy_wrong_frame:
+  first_failing_spec: box_in_goal
+  must_events:
+  - collision
+  cause: sign_or_frame
+buggy_units:
+  first_failing_spec: null
+  must_events: []
+  cause: units
+  fuzz_max_pass_rate: 0.6
+buggy_latency:
+  first_failing_spec: null
+  must_events: []
+  cause: latency_sensitivity
+  fuzz_max_pass_rate: 0.6

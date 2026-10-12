@@ -1,0 +1,18 @@
+name: wheeled_balancer
+description: Balance a two-wheel mobile base and drive forward half a meter to a stop.
+model: model.xml
+duration: 5.0
+control_dt: 0.01
+init: {qpos: {travel: 0.0, pitch: 0.09}}
+target: {position: 0.5}
+perturb:
+  mass_scale: [0.9, 1.1]
+  obs_noise_std: 0.0004
+  latency_ms: [0, 10]
+specs:
+  - name: balance
+    stl: "always[0,5](abs(joint.pitch.pos) < 0.28)"
+  - name: reach_and_stop
+    stl: "eventually[2,4](always[0,1](abs(joint.travel.pos - 0.5) < 0.09 and abs(joint.travel.vel) < 0.16))"
+  - name: avoid_saturation
+    stl: "always[0,5](ev.saturation < 0.5)"

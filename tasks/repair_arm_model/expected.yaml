@@ -1,8 +1,8 @@
 fixed_model: model_fixed.xml
-buggy_gravity:
-  first_failing_spec: target_reached
-  must_events: [saturation]
-  cause: missing_compensation
+buggy_stale_observation:
+  first_failing_spec: null
+  must_events: []
+  cause: latency_sensitivity
   fuzz_max_pass_rate: 0.6
 buggy_joint_order:
   first_failing_spec: target_reached

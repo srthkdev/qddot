@@ -1,0 +1,1 @@
+Implement a controller for the single-joint arm in `task.yaml`. Move from the specified initial pose to the requested shoulder angle and settle without striking the joint stops or holding the torque actuator at its limit. Keep the controller compatible with the declared control period and the arm's uncertain payload.

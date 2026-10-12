@@ -2,11 +2,16 @@ buggy_joint_order:
   first_failing_spec: pan_settle
   must_events:
   - collision
-  cause: mapping_error
+  cause: wrong_mapping
 buggy_degrees:
   first_failing_spec: pan_settle
   must_events: []
-  cause: unit_scale
+  cause: units
 cause_rules:
   mapping_error: mapping
   unit_scale: unit_scale
+buggy_latency:
+  first_failing_spec: null
+  must_events: []
+  cause: latency_sensitivity
+  fuzz_max_pass_rate: 0.6
