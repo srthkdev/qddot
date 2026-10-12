@@ -1,26 +1,70 @@
-"""Newton physics backend using its MJCF importer and Featherstone solver."""
+"""Newton physics backend using its MJCF importer and MuJoCo-Warp solver."""
 
 from __future__ import annotations
 
+import inspect
 import os
 import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
+import mujoco_warp
 import newton
 import numpy as np
 import warp as wp
 
 from qddot.sim.backend import Contact, Limit
 
+_WP_VEC5 = wp.types.vector(length=5, dtype=wp.float32)
+
+
+@wp.func
+def _legacy_contact_force_fn(
+    opt_cone: int,
+    contact_frame: wp.array2d[wp.mat33],
+    contact_friction: wp.array[_WP_VEC5],
+    contact_dim: wp.array[int],
+    contact_efc_address: wp.array2d[int],
+    efc_force: wp.array2d[float],
+    njmax: int,
+    nacon: wp.array[int],
+    world_id: int,
+    contact_id: int,
+    to_world_frame: bool,
+) -> wp.spatial_vector:
+    """Bridge Newton 1.6's helper call to MuJoCo-Warp 3.15's data layout."""
+    force = wp.spatial_vector()
+    address = contact_efc_address[contact_id, 0]
+    if contact_id >= 0 and contact_id < nacon[world_id] and address >= 0 and address < njmax:
+        # Newton only consumes this vector for its contact report buffer. The
+        # backend's public force values come from the MuJoCo-Warp contact data.
+        force[0] = efc_force[world_id, address]
+        if opt_cone == 0 and address + 1 < njmax:
+            force[0] += efc_force[world_id, address + 1]
+    if to_world_frame:
+        top = wp.spatial_top(force) @ contact_frame[world_id, contact_id]
+        bottom = wp.spatial_bottom(force) @ contact_frame[world_id, contact_id]
+        force = wp.spatial_vector(top, bottom)
+    return force
+
+
+def _prepare_newton_mujoco_warp_compatibility() -> None:
+    """Adapt Newton 1.6's legacy contact helper call for MuJoCo-Warp 3.15."""
+    from mujoco_warp._src import support as mjw_support
+    from newton._src.solvers.mujoco import kernels as newton_mj_kernels
+
+    if len(inspect.signature(mjw_support.contact_force_fn).parameters) == 11:
+        return
+    newton_mj_kernels._import_contact_force_fn = lambda: _legacy_contact_force_fn
+
 
 class NewtonBackend:
-    """Run MJCF models in Newton on CPU."""
+    """Run MJCF models in Newton's MuJoCo-Warp solver on CPU."""
 
     name = "newton"
     version = newton.__version__
-    measures_contact_force = False
+    measures_contact_force = True
 
     def __init__(self, model_path: str) -> None:
         self.model_path = Path(model_path).resolve()
@@ -38,8 +82,9 @@ class NewtonBackend:
         self._contacts = newton.CollisionPipeline(
             self.model, contact_matching="sticky", contact_report=True, deterministic=True
         )
-        self._solver = newton.solvers.SolverFeatherstone(
-            self.model, deterministic=wp.DeterministicMode.RUN_TO_RUN
+        _prepare_newton_mujoco_warp_compatibility()
+        self._solver = newton.solvers.SolverMuJoCo(
+            self.model, use_mujoco_cpu=False, deterministic=wp.DeterministicMode.RUN_TO_RUN
         )
         q_starts = self.model.joint_q_start.numpy().astype(int)
         qd_starts = self.model.joint_qd_start.numpy().astype(int)
@@ -70,6 +115,7 @@ class NewtonBackend:
         self._ctrl = _host(getattr(namespace, "ctrl", None), (0,)).astype(np.float64)
         self._base_mass = self.model.body_mass.numpy().copy()
         self._base_inertia = self.model.body_inertia.numpy().copy()
+        self._mj_body_map = self._solver.mjc_body_to_newton.numpy()[0].astype(int)
         self._base_friction = self.model.shape_material_mu.numpy().copy()
         self._shape_labels = list(self.model.shape_label)
         self._body_labels = list(self.model.body_label)
@@ -84,6 +130,9 @@ class NewtonBackend:
         self.model.body_mass.assign(self._base_mass * mass_scale)
         self.model.body_inertia.assign(self._base_inertia * mass_scale)
         self.model.shape_material_mu.assign(self._base_friction * friction_scale)
+        self._solver.notify_model_changed(
+            newton.ModelFlags.BODY_INERTIAL_PROPERTIES | newton.ModelFlags.SHAPE_PROPERTIES
+        )
         q = self.model.joint_q.numpy().copy()
         qd = np.zeros_like(self.model.joint_qd.numpy())
         ctrl = np.zeros_like(self._ctrl)
@@ -157,26 +206,31 @@ class NewtonBackend:
 
     def contacts(self) -> list[Contact]:
         found: dict[tuple[int, int], Contact] = {}
-        data = self._contacts.contacts()
-        self._contacts.collide(self.state, data)
-        count = int(data.rigid_contact_count.numpy()[0])
-        shapes_a = data.rigid_contact_shape0.numpy()
-        shapes_b = data.rigid_contact_shape1.numpy()
-        normals = data.rigid_contact_normal.numpy()
-        points_a = data.rigid_contact_point0.numpy()
-        points_b = data.rigid_contact_point1.numpy()
+        data = self._solver.mjw_data
+        count = int(data.nacon.numpy()[0])
+        if count == 0:
+            return []
+        contact_ids = wp.array(np.arange(count, dtype=np.int32), dtype=wp.int32, device=self.model.device)
+        force_buffer = wp.empty(count, dtype=wp.spatial_vector, device=self.model.device)
+        mujoco_warp.contact_force(self._solver.mjw_model, data, contact_ids, False, force_buffer)
+        forces = force_buffer.numpy()
+        geoms = data.contact.geom.numpy()[:count]
+        positions = data.contact.pos.numpy()[:count]
+        frames = data.contact.frame.numpy()[:count]
+        distances = data.contact.dist.numpy()[:count]
+        geom_body = self._solver.mjw_model.geom_bodyid.numpy()
+        body_map = self._mj_body_map
         for i in range(count):
-            sa, sb = int(shapes_a[i]), int(shapes_b[i])
-            ba, bb = int(self._shape_body[sa]), int(self._shape_body[sb])
+            ga, gb = (int(v) for v in geoms[i])
+            ba, bb = int(body_map[int(geom_body[ga])]), int(body_map[int(geom_body[gb])])
+            sa, sb = self._shape_for_geom(ga), self._shape_for_geom(gb)
             key = tuple(sorted((ba, bb)))
-            normal = np.asarray(normals[i], dtype=np.float64)
-            # The Featherstone solver does not expose constraint forces, and
-            # the collision pipeline's force buffer is not a solved force.
-            normal_force = float("nan")
-            delta = np.asarray(points_b[i], dtype=np.float64) - np.asarray(points_a[i], dtype=np.float64)
-            penetration = max(0.0, float(np.dot(delta, normal)))
-            velocity_a = self._contact_point_velocity(ba, points_a[i])
-            velocity_b = self._contact_point_velocity(bb, points_b[i])
+            normal_force = max(0.0, float(forces[i, 0]))
+            normal = np.asarray(frames[i, :3], dtype=np.float64)
+            point = np.asarray(positions[i], dtype=np.float64)
+            penetration = max(0.0, -float(distances[i]))
+            velocity_a = self._contact_point_velocity(ba, point)
+            velocity_b = self._contact_point_velocity(bb, point)
             relative = velocity_a - velocity_b
             tangent = relative - np.dot(relative, normal) * normal
             contact = Contact(key, self._contact_name(ba, sa), self._contact_name(bb, sb),
@@ -191,6 +245,13 @@ class NewtonBackend:
             else:
                 found[key] = contact
         return list(found.values())
+
+    def _shape_for_geom(self, geom_id: int) -> int:
+        """Resolve a MuJoCo geom through the solver's explicit shape mapping."""
+        shape_id = int(self._solver.mjc_geom_to_newton_shape.numpy()[0, geom_id])
+        if shape_id < 0:
+            raise ValueError(f"MuJoCo geom {geom_id} has no Newton shape mapping")
+        return shape_id
 
     def finite(self) -> bool:
         return bool(np.isfinite(self.state.joint_q.numpy()).all()

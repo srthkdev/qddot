@@ -157,7 +157,7 @@ qddot's runner, events, specs and diagnosis sit on a small [`Backend`](src/qddot
 |---|---|---|
 | MuJoCo 3.15 | ✅ reference, all tests | bitwise-deterministic per version and platform |
 | Genesis 1.4 | ✅ passes conformance (CPU) | ~50× slower than MuJoCo on CPU; install in its own env (`qddot[genesis]`, conflicts with `qddot[memory]` over pillow) |
-| Newton 1.6 | ⚠️ passes except contact forces | Featherstone solver reports NaN forces rather than estimating them; MuJoCo-Warp solver in progress |
+| Newton 1.6 | ✅ passes conformance (CPU, MuJoCo-Warp solver) | measured contact forces via MuJoCo-Warp; ~50× slower than MuJoCo on CPU, built for NVIDIA GPUs |
 | PyBullet | ❌ no macOS arm64 wheel for Python 3.12 | Linux untested |
 | Drake | ❌ no macOS wheels on PyPI | Linux untested |
 | Isaac Sim / Lab, Gazebo | planned | via the ROS 2 `simulation_interfaces` standard; needs Linux and NVIDIA for Isaac |
