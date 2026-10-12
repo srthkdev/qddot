@@ -44,7 +44,8 @@ def _first_event_by_kind(path: Path) -> dict[str, tuple[str, float]]:
     return first
 
 
-def _summary(verdict: dict[str, Any], first_events: dict[str, tuple[str, float]]) -> list[str]:
+def _summary(verdict: dict[str, Any], first_events: dict[str, tuple[str, float]],
+             top_cause: dict[str, Any] | None = None) -> list[str]:
     status = "PASS" if verdict.get("passed") else "FAIL"
     robustness = verdict.get("robustness")
     rob_text = "n/a" if robustness is None else f"{float(robustness):.3f}"
@@ -66,6 +67,8 @@ def _summary(verdict: dict[str, Any], first_events: dict[str, tuple[str, float]]
             extra = f" (first {first[0]} @{first[1]:.2f}s)" if first else ""
             parts.append(f"{kind} x{count}{extra}")
         lines.append("  events: " + ", ".join(parts))
+    if not verdict.get("passed") and top_cause:
+        lines.append(f"  why: {top_cause['cause']} [{top_cause['confidence']}]")
     episode_dir = verdict.get("episode_dir", f".qddot/runs/{verdict.get('episode', 'unknown')}")
     lines.append(f"  files: {episode_dir}/  (signals.parquet events.parquet verdict.json log.mcap)")
     lines.append('  next: qddot query "select ..." | qddot fuzz ...')
@@ -95,7 +98,16 @@ def register(app: typer.Typer) -> None:
         if json_output:
             emit_json(verdict)
         else:
-            for line in _summary(verdict, _first_event_by_kind(result.episode_dir / "events.parquet")):
+            top_cause = None
+            if not verdict.get("passed"):
+                try:
+                    from qddot.diag import why as diagnose
+
+                    causes = diagnose(result.episode_dir).get("likely_causes", [])
+                    top_cause = causes[0] if causes else None
+                except Exception:  # noqa: BLE001 - A useful summary must not hide the verdict.
+                    top_cause = None
+            for line in _summary(verdict, _first_event_by_kind(result.episode_dir / "events.parquet"), top_cause):
                 console.print(line)
         if not verdict.get("passed", False):
             raise typer.Exit(1)

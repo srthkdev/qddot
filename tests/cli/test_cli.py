@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
+import qddot.diag
 from qddot.cli import app
 
 runner = CliRunner()
@@ -44,6 +45,13 @@ def test_run_pass_and_failure_exit_codes_and_json(monkeypatch, tmp_path: Path) -
     result = runner.invoke(app, ["run", str(task), "--controller", str(controller), "--json"])
     assert result.exit_code == 1
     assert json.loads(result.stdout)["passed"] is False
+
+    monkeypatch.setattr(qddot.diag, "why", lambda _path: {"likely_causes": [{
+        "cause": "bad sign", "confidence": "high"
+    }]})
+    result = runner.invoke(app, ["run", str(task), "--controller", str(controller)])
+    assert result.exit_code == 1
+    assert "why: bad sign [high]" in result.output
 
 
 def test_perturb_parse_error_is_usage_error(monkeypatch, tmp_path: Path) -> None:

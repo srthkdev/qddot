@@ -35,8 +35,11 @@ def _lines(result: dict[str, Any], frames: bool) -> list[str]:
     lines.extend(f"next: {command}" for command in result.get("next_commands", [])[:2])
     if frames and result.get("visual_diff"):
         for item in result["visual_diff"]:
-            moved = ", ".join(body["body"] for body in item["moved_bodies"][:4]) or "none"
-            lines.append(f"visual {item['from_t']:.2f}-{item['to_t']:.2f}s: moved {moved}; contacts {len(item['contacts_before'])}->{len(item['contacts_after'])}")
+            moved = ", ".join(f"{body['body']} ({body['distance_m'] * 100:.1f}cm)"
+                               for body in item["moved_bodies"][:4]) or "none"
+            rotated = ", ".join(f"{body['body']} ({body['angle_deg']:.1f}°)"
+                                 for body in item.get("rotated_bodies", [])[:4]) or "none"
+            lines.append(f"visual {item['baseline']} {item['from_t']:.2f}-{item['to_t']:.2f}s: moved {moved}; rotated {rotated}; contacts {len(item['contacts_before'])}->{len(item['contacts_after'])}")
     return lines[:25]
 
 
@@ -56,14 +59,16 @@ def register(app: typer.Typer) -> None:
             result: dict[str, Any] = diagnose(episode)
             if frames and result.get("first_failing_spec"):
                 witness = result["first_failing_spec"]["witness_t"]
-                times = [max(0.0, witness - 0.5), witness]
-                from qddot.diag._data import read_json
+                from qddot.diag._data import read_json, read_table
 
                 task_path = read_json(episode / "meta.json").get("task_path")
                 from qddot.task import load_task
 
                 task = load_task(task_path)
-                times.append(task.duration)
+                _, events = read_table(episode / "events.parquet")
+                earlier = [float(event["t"]) for event in events if float(event["t"]) < witness]
+                first_event = min(earlier) if earlier else max(0.0, witness - 0.5)
+                times = [0.0, first_event, witness, task.duration]
                 outputs = keyframes(episode, times)
                 result["frames"] = [str(path) for path in outputs]
                 result["visual_diff"] = visual_diff(episode, times)

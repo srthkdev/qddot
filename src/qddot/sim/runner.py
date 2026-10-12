@@ -8,9 +8,9 @@ import json
 import platform
 import time
 import traceback
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Callable, Sequence
 from typing import Any
 
 import mujoco

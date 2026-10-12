@@ -30,6 +30,8 @@ def test_buggy_controllers_match_documented_cause(task_file: Path, tmp_path: Pat
         diagnosis = why(episode.episode_dir)
         assert diagnosis["verdict"] == "FAIL"
         assert diagnosis["likely_causes"], f"no cause for {task.name}/{name}"
+        evidence = [line for cause in diagnosis["likely_causes"] for line in cause["evidence"]]
+        assert len(evidence) == len(set(evidence))
         rule = expected["cause_rules"][config["cause"]]
         if diagnosis["likely_causes"][0]["rule"] == rule:
             correct += 1

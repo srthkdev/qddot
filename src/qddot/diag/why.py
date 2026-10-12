@@ -155,6 +155,7 @@ def _causes(spec: dict[str, Any], signal_rows: list[dict[str, Any]],
     limit_is_target = "joint_limit" in str(spec.get("stl", ""))
     if divergent and not deadline and not (limit and limit_is_target):
         title = "tracking error grows from the start; check sign or coordinate frame"
+        divergent = list(dict.fromkeys(divergent))
         evidence = [f"diverging signal(s): {', '.join(divergent[:3])}"]
         if saturation:
             evidence.append(f"saturation began at {float(saturation[0]['t']):.3f}s")
@@ -164,6 +165,10 @@ def _causes(spec: dict[str, Any], signal_rows: list[dict[str, Any]],
             [f"growing oscillation in {', '.join(oscillating[:3])}"], "med")
 
     causes = list({item["rule"]: item for item in causes}.values())
+    seen_evidence: set[str] = set()
+    for cause in causes:
+        cause["evidence"] = [line for line in cause["evidence"]
+                             if not (line in seen_evidence or seen_evidence.add(line))]
 
     special = []
     for kind, title in (("slip", "object contact slipped before failure"),

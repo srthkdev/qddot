@@ -5,7 +5,6 @@ from __future__ import annotations
 import base64
 import html
 import json
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -20,55 +19,44 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 def _render_frames(episode_dir: Path) -> list[Image.Image]:
-    meta = _read_json(episode_dir / "meta.json")
-    task_path = Path(meta["task_path"])
-    controller_path = Path(meta["controller_path"])
-    if not task_path.is_absolute():
-        task_path = (episode_dir / task_path).resolve()
-    if not controller_path.is_absolute():
-        controller_path = (episode_dir / controller_path).resolve()
-    from qddot.sim.runner import run_episode
-    from qddot.task import load_task
+    import numpy as np
 
+    end_time = float(duckdb.connect(database=":memory:").execute(
+        "SELECT max(t) FROM read_parquet(?)", [str(episode_dir / "signals.parquet")]
+    ).fetchone()[0] or 0.0)
+    times = [float(value) for value in np.arange(0.0, end_time + 0.025, 0.05)]
+    from qddot.diag.replay import _resimulate, _restore_capture
+
+    _, captures = _resimulate(episode_dir, times)
     frames: list[Image.Image] = []
-    next_frame_t = 0.0
     renderer: mujoco.Renderer | None = None
     renderer_failed = False
     camera = mujoco.MjvCamera()
-
-    def capture(_index: int, t: float, model: mujoco.MjModel, data: mujoco.MjData) -> None:
-        nonlocal next_frame_t, renderer, renderer_failed
-        if t + 1e-9 < next_frame_t:
-            return
-        if not renderer_failed:
-            try:
-                if renderer is None:
-                    renderer = mujoco.Renderer(model, height=240, width=320)
-                    mujoco.mjv_defaultCamera(camera)
-                    camera.type = mujoco.mjtCamera.mjCAMERA_FREE
-                    camera.lookat[:] = model.stat.center
-                    camera.distance = max(2.0, float(model.stat.extent) * 2.5)
-                    camera.azimuth = 135.0
-                    camera.elevation = -20.0
-                renderer.update_scene(data, camera)
-                frames.append(Image.fromarray(renderer.render()).convert("RGB"))
-            except Exception:  # noqa: BLE001 - Some headless systems lack a GL context.
-                renderer_failed = True
-                if renderer is not None:
-                    renderer.close()
-                    renderer = None
-                frames.append(_skeleton_frame(model, data, t))
-        else:
-            frames.append(_skeleton_frame(model, data, t))
-        next_frame_t = t + 0.05
-
     try:
-        with tempfile.TemporaryDirectory(prefix="qddot-view-") as temp_root:
-            run_episode(
-                load_task(task_path), controller_path, seed=int(meta.get("seed", 0)),
-                perturb=meta.get("perturb"), root=Path(temp_root), record_mcap=False,
-                on_step=capture, compute_ms_override=meta.get("compute_ms"),
-            )
+        for capture in sorted(captures.values(), key=lambda item: item["t"]):
+            model, data = capture["model"], capture["data"]
+            _restore_capture(capture)
+            if not renderer_failed:
+                try:
+                    if renderer is None:
+                        renderer = mujoco.Renderer(model, height=240, width=320)
+                        mujoco.mjv_defaultCamera(camera)
+                        camera.type = mujoco.mjtCamera.mjCAMERA_FREE
+                        low, high = capture["bounds"]
+                        camera.lookat[:] = (low + high) * 0.5
+                        camera.distance = max(0.4, float(np.max(high - low)) * 1.6)
+                        camera.azimuth = 135.0
+                        camera.elevation = -20.0
+                    renderer.update_scene(data, camera)
+                    frames.append(Image.fromarray(renderer.render()).convert("RGB"))
+                except Exception:  # noqa: BLE001 - Some headless systems lack a GL context.
+                    renderer_failed = True
+                    if renderer is not None:
+                        renderer.close()
+                        renderer = None
+                    frames.append(_skeleton_frame(model, data, capture["t"]))
+            else:
+                frames.append(_skeleton_frame(model, data, capture["t"]))
     finally:
         if renderer is not None:
             renderer.close()
@@ -121,14 +109,16 @@ def _events(episode_dir: Path) -> list[dict[str, Any]]:
 
 
 def _timeline(events: list[dict[str, Any]], verdict: dict[str, Any], end_time: float) -> str:
-    width, height, left, right = 760, 160, 92, 18
+    labels = [str(item.get("name", "spec")) for item in verdict.get("specs", [])]
+    left = max(118, max((len(label) for label in labels), default=0) * 7 + 18)
+    width, height, right = max(900, left + 718), 194, 18
     span = max(float(end_time), 1e-9)
 
     def x_at(t: float) -> float:
         return left + (min(max(t, 0.0), span) / span) * (width - left - right)
 
     parts = [f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="Episode events and spec windows">',
-             '<line x1="92" y1="126" x2="742" y2="126" stroke="#526078" stroke-width="2"/>']
+             f'<line x1="{left}" y1="126" x2="{width-right}" y2="126" stroke="#526078" stroke-width="2"/>']
     for tick in range(5):
         value = span * tick / 4
         xpos = x_at(value)
@@ -148,13 +138,42 @@ def _timeline(events: list[dict[str, Any]], verdict: dict[str, Any], end_time: f
             parts.append(f'<line x1="{wx:.1f}" y1="{y-4}" x2="{wx:.1f}" y2="{y+15}" stroke="#ffbd69" stroke-width="2"/>')
     event_y = 115
     colors = {"collision": "#fb7185", "contact_start": "#f97316", "slip": "#facc15",
-              "deadline_miss": "#c084fc", "joint_limit": "#38bdf8", "saturation": "#fb923c"}
+              "deadline_miss": "#c084fc", "joint_limit": "#38bdf8", "saturation": "#fb923c",
+              "contact_end": "#22d3ee", "nan_state": "#f472b6", "controller_error": "#ef4444"}
+    grouped: dict[tuple[str, str, str], list[float]] = {}
     for event in events:
-        xpos = x_at(event["t"])
-        color = colors.get(event["kind"], "#94a3b8")
-        parts.append(f'<circle cx="{xpos:.1f}" cy="{event_y}" r="4" fill="{color}"><title>{html.escape(event["kind"])} at {event["t"]:.3f}s: {html.escape(event["a"])}</title></circle>')
-    parts.extend(['<text x="14" y="118">events</text>',
-                  '<text x="98" y="15" fill="#ffbd69">│ witness</text>', '</svg>'])
+        key = (event["kind"], event["a"], str(event.get("b") or ""))
+        grouped.setdefault(key, []).append(float(event["t"]))
+    for (kind, element, _), values in grouped.items():
+        values.sort()
+        runs: list[tuple[float, float, int]] = []
+        start = previous = values[0]
+        count = 1
+        for value in values[1:]:
+            if value - previous <= 0.15:
+                count += 1
+                previous = value
+            else:
+                runs.append((start, previous, count))
+                start = previous = value
+                count = 1
+        runs.append((start, previous, count))
+        color = colors.get(kind, "#94a3b8")
+        for start, end, count in runs:
+            label = html.escape(f"{kind}: {element}")
+            if count >= 3:
+                x1, x2 = x_at(start), x_at(end)
+                parts.append(f'<rect x="{x1:.1f}" y="{event_y-4}" width="{max(3, x2-x1):.1f}" height="8" rx="4" fill="{color}"><title>{label}, {start:.3f}–{end:.3f}s ({count} events)</title></rect>')
+            else:
+                for value in values:
+                    if start <= value <= end:
+                        xpos = x_at(value)
+                        parts.append(f'<circle cx="{xpos:.1f}" cy="{event_y}" r="4" fill="{color}"><title>{label} at {value:.3f}s</title></circle>')
+    for index, (kind, color) in enumerate(colors.items()):
+        xpos, ypos = left + (index % 4) * 190, 174 + (index // 4) * 16
+        parts.append(f'<circle cx="{xpos}" cy="{ypos-3}" r="4" fill="{color}"/><text x="{xpos+9}" y="{ypos}">{html.escape(kind)}</text>')
+    parts.extend([f'<text x="{left-12}" y="118" text-anchor="end">events</text>',
+                  f'<text x="{left+6}" y="15" fill="#ffbd69">│ witness</text>', '</svg>'])
     return "".join(parts)
 
 
@@ -171,12 +190,29 @@ def _build_html(episode_dir: Path, gif_path: Path, verdict: dict[str, Any],
     specs = "".join(
         f'<li><span class="pill {"pass" if item.get("passed") else "fail"}">{"PASS" if item.get("passed") else "FAIL"}</span> '
         f'<b>{html.escape(str(item.get("name", "spec")))}</b> · robustness '
-        f'{html.escape(str(item.get("robustness", "n/a")))}</li>'
+        f'{float(item["robustness"]):.3f}</li>' if item.get("robustness") is not None else
+        f'<li><span class="pill {"pass" if item.get("passed") else "fail"}">{"PASS" if item.get("passed") else "FAIL"}</span> '
+        f'<b>{html.escape(str(item.get("name", "spec")))}</b> · robustness n/a</li>'
         for item in verdict.get("specs", [])
     ) or '<li class="muted">No formal specs recorded</li>'
     timeline = _timeline(events, verdict, end_time)
     episode = html.escape(str(verdict.get("episode", episode_dir.name)))
     status = "PASS" if passed else "FAIL"
+    likely_causes = ""
+    if not passed:
+        try:
+            from qddot.diag import why
+
+            causes = why(episode_dir).get("likely_causes", [])
+            if causes:
+                likely_causes = '<section class="panel"><h2>Likely causes</h2><ul>' + "".join(
+                    f'<li><b>{html.escape(str(item["cause"]))}</b> <span class="muted">[{html.escape(str(item["confidence"]))}]</span><br>{html.escape("; ".join(item["evidence"]))}</li>'
+                    for item in causes[:4]
+                ) + "</ul></section>"
+        except Exception:  # noqa: BLE001 - Report generation can proceed without diagnosis.
+            likely_causes = ""
+    robustness = verdict.get("robustness")
+    robustness_text = f"{float(robustness):.3f}" if robustness is not None else "n/a"
     return f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>qddot replay · {episode}</title><style>
@@ -190,9 +226,10 @@ svg{{width:100%;height:auto}}svg text{{font:11px system-ui,sans-serif;fill:#a8b5
 </style></head><body>
 <header><span class="status">{status}</span><h1>Episode replay</h1><div class="sub">{episode} · {html.escape(str(verdict.get('task', 'task')))} · seed {html.escape(str(verdict.get('seed', '—')))}</div></header>
 <section class="panel"><img alt="Re-simulated MuJoCo episode animation" src="data:image/gif;base64,{encoded}"></section>
-<div class="grid"><section class="panel"><h2>Verdict</h2><p>Overall robustness: <b>{html.escape(str(verdict.get('robustness', 'n/a')))}</b></p><ul>{specs}</ul></section>
+<div class="grid"><section class="panel"><h2>Verdict</h2><p>Overall robustness: <b>{robustness_text}</b></p><ul>{specs}</ul></section>
 <section class="panel"><h2>Run details</h2><p>Control steps: {html.escape(str(verdict.get('stats', {}).get('control_steps', '—')))}<br>Physics steps: {html.escape(str(verdict.get('stats', {}).get('physics_steps', '—')))}<br>Events: {len(events)}</p></section></div>
 <section class="panel timeline"><h2>Events and spec windows</h2>{timeline}</section>
+{likely_causes}
 </body></html>'''
 
 

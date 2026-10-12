@@ -94,12 +94,36 @@ def test_witness_and_outer_temporal_window() -> None:
 
 def test_english_nested_example_and_generic() -> None:
     assert to_english("eventually[0,2.5](always[0,1](dist_ee_target < 0.02))") == (
-        "within 2.5 s, dist_ee_target becomes less than 0.02 and then stays below it for 1 s"
+        "within 2.5 s, dist_ee_target drops below 0.02 and stays there for 1 s"
     )
-    assert to_english("always[0,1](x > 2)") == "from 0 s to 1 s, x stays above 2"
+    assert to_english("always[0,1](x > 2)") == "for 1 s, x stays above 2"
     assert to_english("always(x < 3)") == "x stays below 3 for the whole run"
     assert to_english("not eventually(ev.joint_limit > 0.5)") == "no joint limit is ever hit"
     assert to_english("always(col_arm_table < 0.5)") == "no arm table collision occurs for the whole run"
+    assert to_english("always[1,3](p > 0 implies q < 2)") == (
+        "from 1 to 3 s, whenever p is above 0, q is below 2"
+    )
+    assert to_english("eventually[0,2](always[0,2](abs(joint.pole.pos) < 0.05))") == (
+        "within 2 s, |joint.pole.pos| drops below 0.05 and stays there for 2 s"
+    )
+    assert to_english("eventually[2,3](always[0,1](abs(x - (-1.2)) < 0.04))") == (
+        "between 2 and 3 s, |x - (-1.2)| drops below 0.04 and stays there for 1 s"
+    )
+    assert to_english("always[0,4](ev.saturation < 0.5)") == "no saturation occurs for 4 s"
+    assert to_english("not eventually[0,2](x > 1)") == "x never rises above 1 within 2 s"
+    assert to_english("x < 1 until[0,3](y > 2)") == "x stays below 1 until within 3 s y rises above 2"
+
+
+def test_task_spec_english_is_readable() -> None:
+    from pathlib import Path
+
+    import yaml
+
+    root = Path(__file__).resolve().parents[2]
+    for task_name in ("so101_reach", "cartpole_balance", "ur5e_track"):
+        task = yaml.safe_load((root / "tasks" / task_name / "task.yaml").read_text())
+        phrases = [to_english(item["stl"]) for item in task["specs"]]
+        assert all(phrase and "the absolute value of" not in phrase for phrase in phrases)
 
 
 def test_evaluate_specs_shape() -> None:
