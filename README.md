@@ -8,6 +8,12 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
 
+## Same agent, same task: without vs with qddot
+
+![ALOHA handover: Codex GPT-6 Luna without qddot (left, fails on an arm-arm collision it claimed was fine) vs with qddot (right, passes)](docs/media/hero/aloha.gif)
+
+In the ALOHA 2 bimanual handover, Codex (GPT-6 Luna, high) without qddot produced a controller that *looks* right but crashes the grippers together at 2.88 s, and then reported success. With qddot it passed on **3/3 seeds at 100% fuzz**; without it, **0/3**. Full numbers: [docs/results.md](docs/results.md).
+
 ## Why qddot
 
 - Coding agents are strongest when they can execute code and check its result.
@@ -189,7 +195,15 @@ Isolation is enforced, not assumed:
 - reference controllers, seeded bugs and their bytecode are made unreadable during runs;
 - every transcript is audited for attempts to reach them.
 
-An early pilot was discarded after the audit caught an agent reading a reference controller. **Results: in progress.** See [docs/benchmark.md](docs/benchmark.md).
+An early pilot was discarded after the audit caught an agent reading a reference controller.
+
+| Agent (15 tasks, 1 seed) | No simulator | Print-only sim | qddot |
+|---|---:|---:|---:|
+| Claude Code, Haiku 5.5 | 67% | 100% | 93% |
+| Codex, GPT-6 Luna high | 53% | 87% | 100% |
+| ALOHA handover, Luna, 3 seeds | — | 0/3 | **3/3** |
+
+Running the physics at all matters most. On the easy tasks, qddot vs a bare simulator is within noise; on the hard bimanual task it decided the outcome. Details and caveats: [docs/results.md](docs/results.md).
 
 ## Performance
 
