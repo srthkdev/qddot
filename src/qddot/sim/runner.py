@@ -1,4 +1,4 @@
-"""Run a controller against a MuJoCo task and persist the episode."""
+"""Run a controller against a task on a physics backend and persist the episode."""
 
 from __future__ import annotations
 
@@ -13,14 +13,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import mujoco
 import numpy as np
 
 from qddot import __version__
 from qddot.record.writer import write_episode
+from qddot.sim.backend import Backend, load_backend
 from qddot.sim.events import EventDetector
 from qddot.sim.perturb import resolve
 from qddot.task import Task
+
+EVENT_INDICATORS = ("collision", "joint_limit", "saturation", "deadline_miss")
 
 
 @dataclass
@@ -32,203 +34,200 @@ class EpisodeResult:
 def run_episode(task: Task, controller_path: Path, seed: int = 0,
                 perturb: dict[str, Any] | None = None, root: Path = Path(".qddot"),
                 record_mcap: bool = True,
-                on_step: Callable[[int, float, mujoco.MjModel, mujoco.MjData], None] | None = None,
+                on_step: Callable[[int, float, Any, Any], None] | None = None,
                 compute_ms_override: Sequence[float] | None = None) -> EpisodeResult:
     """Run one deterministic episode and write its artifacts.
 
-    ``on_step(control_index, t, model, data)`` is called after the initial state
-    (index -1) and after every control step, for re-simulation tools (frames,
-    replay). ``compute_ms_override`` replays recorded controller compute times so
-    deadline effects are reproduced exactly instead of re-measured.
+    ``on_step(control_index, t, *backend.native())`` is called after the initial
+    state (index -1) and after every control step, for re-simulation tools.
+    ``compute_ms_override`` replays recorded controller compute times so deadline
+    effects are reproduced exactly instead of re-measured.
     """
     started = time.perf_counter()
     controller_path = Path(controller_path).resolve()
-    root = Path(root)
-    params = resolve(perturb)
-    # A scalar task budget is an execution constraint, not a sampled physics
-    # perturbation, so it remains active for nominal and partially specified runs.
-    if (params["controller_budget_ms"] is None
-            and (perturb is None or "controller_budget_ms" not in perturb)):
-        task_budget = task.perturb.get("controller_budget_ms")
-        if task_budget is not None and not isinstance(task_budget, (list, tuple)):
-            params["controller_budget_ms"] = float(task_budget)
-    params_json = json.dumps(params, sort_keys=True, separators=(",", ":"))
-    param_hash = hashlib.sha256(params_json.encode()).hexdigest()[:6]
-    episode_id = f"{task.name}-{controller_path.stem}-s{seed}-{param_hash}"
-    episode_dir = root / "runs" / episode_id
+    params = _resolve_params(task, perturb)
+    param_hash = hashlib.sha256(json.dumps(params, sort_keys=True, separators=(",", ":")).encode())
+    episode_id = f"{task.name}-{controller_path.stem}-s{seed}-{param_hash.hexdigest()[:6]}"
     rng = np.random.default_rng(seed)
-    errors: list[str] = []
-    detector = EventDetector()
-    model = mujoco.MjModel.from_xml_path(str(task.model_path))
-    data = mujoco.MjData(model)
-    _apply_initial_state(model, data, task)
-    friction_scale = float(params["friction_scale"] or 1.0)
-    mass_scale = float(params["mass_scale"] or 1.0)
-    model.geom_friction[:, 0] *= friction_scale
-    model.body_mass[:] *= mass_scale
-    model.body_inertia[:] *= mass_scale
-    mujoco.mj_forward(model, data)
-    physics_dt = float(model.opt.timestep)
-    substeps = round(task.control_dt / physics_dt)
-    if substeps < 1 or not np.isclose(substeps * physics_dt, task.control_dt, rtol=0, atol=1e-10):
-        raise ValueError(f"control_dt {task.control_dt} must be a multiple of model timestep {physics_dt}")
-    control_steps = max(1, round(task.duration / task.control_dt))
-    joint_types = (int(mujoco.mjtJoint.mjJNT_HINGE), int(mujoco.mjtJoint.mjJNT_SLIDE))
-    joint_ids = [i for i in range(model.njnt) if int(model.jnt_type[i]) in joint_types]
-    joint_names = [_name(model, mujoco.mjtObj.mjOBJ_JOINT, i) for i in joint_ids]
-    actuator_names = [_name(model, mujoco.mjtObj.mjOBJ_ACTUATOR, i) for i in range(model.nu)]
-    initial_ctrl = np.array(data.ctrl, dtype=np.float64, copy=True)
-    controller = _load_controller(controller_path)
-    info = {"actuators": actuator_names, "joints": joint_names, "control_dt": task.control_dt,
-            "target": task.target, "model_path": str(task.model_path)}
-    if hasattr(controller, "reset"):
-        controller.reset(info)
 
-    signal_rows: list[dict[str, float]] = []
-    obs_history: list[dict[str, float]] = []
-    _record_state(signal_rows, obs_history, model, data, task, detector, 0.0, initial_ctrl)
+    sim = load_backend(getattr(task, "backend", "mujoco"), str(task.model_path))
+    sim.reset(task.init, float(params["friction_scale"] or 1.0), float(params["mass_scale"] or 1.0))
+    substeps = round(task.control_dt / sim.timestep)
+    if substeps < 1 or not np.isclose(substeps * sim.timestep, task.control_dt, rtol=0, atol=1e-10):
+        raise ValueError(f"control_dt {task.control_dt} must be a multiple of model timestep {sim.timestep}")
+    actuator_names = [act.name for act in sim.actuators]
+    controller = _load_controller(controller_path)
+    if hasattr(controller, "reset"):
+        controller.reset({"actuators": actuator_names, "joints": [j.name for j in sim.joints],
+                          "control_dt": task.control_dt, "target": task.target,
+                          "model_path": str(task.model_path), "backend": sim.name})
+
+    detector = EventDetector()
+    rows: list[dict[str, float]] = []
+    history: list[dict[str, float]] = []
+    errors: list[str] = []
+    compute_log: list[float] = []
+    _record(rows, history, sim, task, detector, 0.0, sim.ctrl())
     latency_steps = max(0, round(float(params["latency_ms"] or 0.0) / (task.control_dt * 1000)))
     noise_std = float(params["obs_noise_std"] or 0.0)
-    jitter_std_steps = float(params["jitter_ms"] or 0.0) / (physics_dt * 1000)
+    jitter_std_steps = float(params["jitter_ms"] or 0.0) / (sim.timestep * 1000)
     budget = params["controller_budget_ms"]
-    last_ctrl = initial_ctrl.copy()
-    action_queue: list[tuple[int, np.ndarray]] = []
+    last_ctrl = sim.ctrl()
+    queue: list[tuple[int, np.ndarray]] = []
     physics_count = 0
-    compute_log: list[float] = []
     if on_step is not None:
-        on_step(-1, 0.0, model, data)
+        on_step(-1, 0.0, *sim.native())
 
-    for control_index in range(control_steps):
+    for control_index in range(max(1, round(task.duration / task.control_dt))):
+        t = control_index * task.control_dt
         detector.begin_control_step()
-        sample_index = max(0, len(obs_history) - 1 - latency_steps)
-        obs = dict(obs_history[sample_index])
+        obs = dict(history[max(0, len(history) - 1 - latency_steps)])
         if noise_std:
             for name in obs:
                 obs[name] += float(rng.normal(0.0, noise_std))
         call_started = time.perf_counter()
         try:
-            output = controller.step(obs, control_index * task.control_dt)
+            output = controller.step(obs, t)
             if not isinstance(output, dict):
                 raise TypeError("Controller.step must return a mapping of actuator names to values")
         except Exception:  # noqa: BLE001 - controller failures are episode results.
-            error = traceback.format_exc()
-            errors.append("\n".join(error.splitlines()[-20:]))
-            detector.add(control_index * task.control_dt, "controller_error", controller_path.name,
-                         detail={"traceback": errors[-1]})
+            errors.append("\n".join(traceback.format_exc().splitlines()[-20:]))
+            detector.add(t, "controller_error", controller_path.name, detail={"traceback": errors[-1]})
             break
         compute_ms = (time.perf_counter() - call_started) * 1000.0
         if compute_ms_override is not None and control_index < len(compute_ms_override):
             compute_ms = float(compute_ms_override[control_index])
         compute_log.append(compute_ms)
-        missed_deadline = budget is not None and compute_ms > float(budget)
-        if missed_deadline:
-            detector.deadline_miss(control_index * task.control_dt, controller_path.name, compute_ms)
+        missed = budget is not None and compute_ms > float(budget)
+        if missed:
+            detector.deadline_miss(t, controller_path.name, compute_ms)
         else:
             detector.deadline_met()
 
-        proposed = last_ctrl.copy()
-        for name, value in output.items():
-            if name not in actuator_names:
-                continue
-            aid = actuator_names.index(name)
-            raw = float(value)
-            low, high = model.actuator_ctrlrange[aid]
-            if model.actuator_ctrllimited[aid]:
-                clipped = float(np.clip(raw, low, high))
-            else:
-                clipped = raw
-            detector.saturation(control_index * task.control_dt, aid, name, raw, clipped)
-            proposed[aid] = clipped
-        last_ctrl = proposed
+        last_ctrl = _apply_limits(output, last_ctrl, sim, detector, t)
+        # A late command lands ceil(compute/control_dt) control steps later; jitter shifts it further.
         jitter = round(float(rng.normal(0.0, jitter_std_steps))) if jitter_std_steps else 0
-        late_steps = (int(np.ceil(compute_ms / (task.control_dt * 1000.0)))
-                      if missed_deadline else 0)
-        action_queue.append((physics_count + (late_steps * substeps) + max(0, jitter), proposed.copy()))
-        action_queue.sort(key=lambda item: item[0])
+        late = int(np.ceil(compute_ms / (task.control_dt * 1000.0))) if missed else 0
+        queue.append((physics_count + late * substeps + max(0, jitter), last_ctrl.copy()))
+        queue.sort(key=lambda item: item[0])
 
-        for substep in range(substeps):
-            while action_queue and action_queue[0][0] <= physics_count:
-                _, applied = action_queue.pop(0)
-                data.ctrl[:] = applied
-            mujoco.mj_step(model, data)
+        for _ in range(substeps):
+            while queue and queue[0][0] <= physics_count:
+                sim.set_ctrl(queue.pop(0)[1])
+            sim.step()
             physics_count += 1
-            now = physics_count * physics_dt
-            detector.detect_physics(model, data, now, task.contact_pairs, control_index)
-            if not np.isfinite(data.qpos).all() or not np.isfinite(data.qvel).all():
+            now = physics_count * sim.timestep
+            detector.detect_physics(sim.contacts(), sim.joints, sim.joint_state()[0], now,
+                                    task.contact_pairs, control_index)
+            if not sim.finite():
                 detector.add(now, "nan_state", "state")
-                errors.append("MuJoCo state contains non-finite qpos or qvel")
+                errors.append("simulation state contains non-finite positions or velocities")
                 break
         if "nan_state" in detector.step_kinds:
             break
-        _record_state(signal_rows, obs_history, model, data, task, detector,
-                      (control_index + 1) * task.control_dt, data.ctrl)
+        _record(rows, history, sim, task, detector, (control_index + 1) * task.control_dt, sim.ctrl())
         if on_step is not None:
-            on_step(control_index, (control_index + 1) * task.control_dt, model, data)
+            on_step(control_index, (control_index + 1) * task.control_dt, *sim.native())
 
-    times = np.asarray([row["t"] for row in signal_rows], dtype=np.float64)
-    signal_arrays = {name: np.asarray([row[name] for row in signal_rows], dtype=np.float64)
-                     for name in signal_rows[0] if name != "t"}
-    spec_results: list[dict[str, Any]] = []
-    robustness: float | None = None
-    if task.specs:
-        try:
-            from qddot.spec import evaluate_specs
-            spec_results = evaluate_specs(task.specs, times, signal_arrays)
-            vals = [float(spec["robustness"]) for spec in spec_results if spec.get("robustness") is not None]
-            robustness = min(vals) if vals else None
-        except ImportError:
-            errors.append("spec module unavailable")
-    violations = [spec for spec in spec_results if not spec.get("passed", True)]
-    first_violation = None
-    if violations:
-        # Task specs are ordered by diagnostic priority; preserve that ordering
-        # when naming the first failing spec in a verdict.
-        critical = violations[0]
-        first_violation = {"spec": critical.get("name"), "t": critical.get("witness_t")}
-    event_summary: dict[str, int] = {}
-    for event in detector.emitted:
-        event_summary[event["kind"]] = event_summary.get(event["kind"], 0) + 1
-    passed = not errors and all(item.get("passed", False) for item in spec_results)
-    if not task.specs and not errors:
-        passed = True
-    elapsed = time.perf_counter() - started
-    verdict = {
-        "episode": episode_id, "task": task.name, "controller": str(controller_path), "seed": seed,
-        "passed": passed, "robustness": robustness, "specs": spec_results,
-        "first_violation": first_violation, "events_summary": event_summary, "errors": errors,
-        "perturb": params, "env": _environment(),
-        "stats": {"control_steps": len(signal_rows) - 1, "physics_steps": physics_count,
-                  "wall_s": elapsed},
-    }
+    verdict = _verdict(task, rows, detector, errors, params, sim)
+    verdict.update(episode=episode_id, controller=str(controller_path), seed=seed)
+    verdict["stats"] = {"control_steps": len(rows) - 1, "physics_steps": physics_count,
+                        "wall_s": time.perf_counter() - started}
     meta = {"task_path": str(task.path), "controller_path": str(controller_path),
-            "controller_sha256": _sha256(controller_path), "seed": seed,
-            "perturb": params, "env": verdict["env"],
-            "compute_ms": [round(v, 6) for v in compute_log]}
-    write_episode(episode_dir, signal_rows, detector.emitted, verdict, meta, record_mcap)
+            "controller_sha256": _sha256(controller_path), "seed": seed, "perturb": params,
+            "env": verdict["env"], "compute_ms": [round(v, 6) for v in compute_log]}
+    episode_dir = Path(root) / "runs" / episode_id
+    write_episode(episode_dir, rows, detector.emitted, verdict, meta, record_mcap)
     return EpisodeResult(episode_dir=episode_dir, verdict=verdict)
 
 
-def _apply_initial_state(model: Any, data: Any, task: Task) -> None:
-    if task.init.get("keyframe"):
-        key_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, task.init["keyframe"])
-        if key_id < 0:
-            raise ValueError(f"unknown keyframe: {task.init['keyframe']}")
-        data.qpos[:] = model.key_qpos[key_id]
-        if model.nv and model.nkey and model.key_qvel.shape[1]:
-            data.qvel[:] = model.key_qvel[key_id]
-        if model.nu and model.nkey and model.key_ctrl.shape[1]:
-            data.ctrl[:] = model.key_ctrl[key_id]
-        if model.na and model.nkey and model.key_act.shape[1]:
-            data.act[:] = model.key_act[key_id]
-    for joint_name, value in task.init.get("qpos", {}).items():
-        jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, joint_name)
-        if jid < 0:
-            raise ValueError(f"unknown joint in init.qpos: {joint_name}")
-        joint_types = (int(mujoco.mjtJoint.mjJNT_HINGE), int(mujoco.mjtJoint.mjJNT_SLIDE))
-        if int(model.jnt_type[jid]) not in joint_types:
-            raise ValueError(f"init.qpos supports hinge and slide joints only: {joint_name}")
-        data.qpos[model.jnt_qposadr[jid]] = float(value)
-    mujoco.mj_forward(model, data)
+def _resolve_params(task: Task, perturb: dict[str, Any] | None) -> dict[str, Any]:
+    params = resolve(perturb)
+    # A scalar task budget is an execution constraint, not a sampled perturbation,
+    # so it stays active for nominal and partially specified runs.
+    if params["controller_budget_ms"] is None and (perturb is None or "controller_budget_ms" not in perturb):
+        task_budget = task.perturb.get("controller_budget_ms")
+        if task_budget is not None and not isinstance(task_budget, (list, tuple)):
+            params["controller_budget_ms"] = float(task_budget)
+    return params
+
+
+def _apply_limits(output: dict[str, Any], last: np.ndarray, sim: Backend,
+                  detector: EventDetector, t: float) -> np.ndarray:
+    """Merge a controller's output into the held command, clipping to actuator ranges."""
+    proposed = last.copy()
+    index = {act.name: i for i, act in enumerate(sim.actuators)}
+    for name, value in output.items():
+        if name not in index:
+            continue
+        aid, act, raw = index[name], sim.actuators[index[name]], float(value)
+        clipped = float(np.clip(raw, act.low, act.high)) if act.limited else raw
+        detector.saturation(t, aid, name, raw, clipped)
+        proposed[aid] = clipped
+    return proposed
+
+
+def _record(rows: list[dict[str, float]], history: list[dict[str, float]], sim: Backend, task: Task,
+            detector: EventDetector, t: float, controls: np.ndarray) -> None:
+    """Append one signal row (all signals) and one observation (what the controller may see)."""
+    obs: dict[str, float] = {"t": float(t)}
+    positions, velocities = sim.joint_state()
+    for joint, pos, vel in zip(sim.joints, positions, velocities, strict=True):
+        obs[f"joint.{joint.name}.pos"], obs[f"joint.{joint.name}.vel"] = float(pos), float(vel)
+    forces = sim.actuator_force()
+    for aid, act in enumerate(sim.actuators):
+        obs[f"act.{act.name}.ctrl"], obs[f"act.{act.name}.force"] = float(controls[aid]), float(forces[aid])
+    for signal in task.signals:
+        obs[signal["name"]] = _derived_signal(sim, signal, task.target)
+    row = dict(obs)
+    active = list(detector.active_contacts.values())
+    for pair in task.contact_pairs:
+        names_a, names_b = set(pair["a"]), set(pair["b"])
+        row[f"col_{pair['name']}"] = float(any(
+            (c.a in names_a and c.b in names_b) or (c.b in names_a and c.a in names_b) for c in active))
+    for kind in EVENT_INDICATORS:
+        row[f"ev.{kind}"] = float(kind in detector.step_kinds)
+    rows.append(row)
+    history.append(obs)
+
+
+def _derived_signal(sim: Backend, signal: dict[str, Any], target: dict[str, Any]) -> float:
+    kind, ref = signal["kind"], signal.get("ref")
+    if kind in ("site_pos", "body_pos"):
+        return float(sim.position(ref, kind.removesuffix("_pos"))["xyz".index(signal.get("axis", "x"))])
+    a = sim.position(ref)
+    to = signal.get("to")
+    b = (np.asarray([target.get(axis, 0.0) for axis in "xyz"], dtype=np.float64)
+         if to == "target" else sim.position(to))
+    return float(np.linalg.norm(a - b))
+
+
+def _verdict(task: Task, rows: list[dict[str, float]], detector: EventDetector, errors: list[str],
+             params: dict[str, Any], sim: Backend) -> dict[str, Any]:
+    times = np.asarray([row["t"] for row in rows], dtype=np.float64)
+    signals = {name: np.asarray([row[name] for row in rows], dtype=np.float64)
+               for name in rows[0] if name != "t"}
+    specs: list[dict[str, Any]] = []
+    if task.specs:
+        from qddot.spec import evaluate_specs
+
+        specs = evaluate_specs(task.specs, times, signals)
+    scores = [float(s["robustness"]) for s in specs if s.get("robustness") is not None]
+    failing = [s for s in specs if not s.get("passed", True)]
+    summary: dict[str, int] = {}
+    for event in detector.emitted:
+        summary[event["kind"]] = summary.get(event["kind"], 0) + 1
+    return {
+        "task": task.name,
+        "passed": not errors and all(s.get("passed", False) for s in specs),
+        "robustness": min(scores) if scores else None,
+        "specs": specs,
+        # Specs are declared in diagnostic priority order, so the first failing one leads.
+        "first_violation": {"spec": failing[0].get("name"), "t": failing[0].get("witness_t")} if failing else None,
+        "events_summary": summary, "errors": errors, "perturb": params,
+        "env": {sim.name: sim.version, "python": platform.python_version(),
+                "platform": platform.platform(), "qddot": __version__},
+    }
 
 
 def _load_controller(path: Path) -> Any:
@@ -240,82 +239,5 @@ def _load_controller(path: Path) -> Any:
     return module.Controller()
 
 
-def _record_state(rows: list[dict[str, float]], history: list[dict[str, float]], model: Any,
-                  data: Any, task: Task, detector: EventDetector, t: float,
-                  controls: np.ndarray) -> None:
-    row: dict[str, float] = {"t": float(t)}
-    obs: dict[str, float] = {"t": float(t)}
-    for jid in range(model.njnt):
-        joint_types = (int(mujoco.mjtJoint.mjJNT_HINGE), int(mujoco.mjtJoint.mjJNT_SLIDE))
-        if int(model.jnt_type[jid]) not in joint_types:
-            continue
-        name = _name(model, mujoco.mjtObj.mjOBJ_JOINT, jid)
-        qadr, vadr = int(model.jnt_qposadr[jid]), int(model.jnt_dofadr[jid])
-        pos, vel = f"joint.{name}.pos", f"joint.{name}.vel"
-        row[pos] = obs[pos] = float(data.qpos[qadr])
-        row[vel] = obs[vel] = float(data.qvel[vadr])
-    for aid in range(model.nu):
-        name = _name(model, mujoco.mjtObj.mjOBJ_ACTUATOR, aid)
-        ctrl, force = f"act.{name}.ctrl", f"act.{name}.force"
-        row[ctrl] = obs[ctrl] = float(controls[aid])
-        row[force] = obs[force] = float(data.actuator_force[aid])
-    for signal in task.signals:
-        value = _derived_signal(model, data, signal, task.target)
-        row[signal["name"]] = obs[signal["name"]] = value
-    for pair in task.contact_pairs:
-        names_a, names_b = set(pair["a"]), set(pair["b"])
-        active = any((item["a"] in names_a and item["b"] in names_b)
-                     or (item["b"] in names_a and item["a"] in names_b)
-                     for item in detector.active_contacts.values())
-        row[f"col_{pair['name']}"] = float(active)
-    for kind in ("collision", "joint_limit", "saturation", "deadline_miss"):
-        row[f"ev.{kind}"] = float(kind in detector.step_kinds)
-    rows.append(row)
-    history.append(obs)
-
-
-def _derived_signal(model: Any, data: Any, signal: dict[str, Any], target: dict[str, Any]) -> float:
-    kind, ref = signal["kind"], signal.get("ref")
-    if kind == "site_pos":
-        index = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, ref)
-        if index < 0:
-            raise ValueError(f"unknown site signal reference: {ref}")
-        return float(data.site_xpos[index, "xyz".index(signal.get("axis", "x"))])
-    if kind == "body_pos":
-        index = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, ref)
-        if index < 0:
-            raise ValueError(f"unknown body signal reference: {ref}")
-        return float(data.xpos[index, "xyz".index(signal.get("axis", "x"))])
-    a = _position(model, data, ref)
-    dest = signal.get("to")
-    b = np.asarray([target.get(axis, 0.0) for axis in ("x", "y", "z")], dtype=np.float64) if dest == "target" else _position(model, data, dest)
-    return float(np.linalg.norm(a - b))
-
-
-def _position(model: Any, data: Any, name: str) -> np.ndarray:
-    site_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, name)
-    if site_id >= 0:
-        return data.site_xpos[site_id]
-    body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
-    if body_id >= 0:
-        return data.xpos[body_id]
-    raise ValueError(f"unknown site or body reference: {name}")
-
-
-def _name(model: Any, objtype: Any, index: int) -> str:
-    if objtype == mujoco.mjtObj.mjOBJ_BODY and index == 0:
-        return "world"
-    return mujoco.mj_id2name(model, objtype, index) or f"element_{index}"
-
-
 def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(65536), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
-def _environment() -> dict[str, str]:
-    return {"mujoco": mujoco.__version__, "python": platform.python_version(),
-            "platform": platform.platform(), "qddot": __version__}
+    return hashlib.sha256(path.read_bytes()).hexdigest()
