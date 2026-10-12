@@ -121,6 +121,19 @@ def replay(episode_dir: str, t: float, frame: bool = False) -> dict[str, Any]:
     return _diagnostic("replay", Path(episode_dir), t, frame=frame)
 
 
+@server.tool(description="Retrieve related past failure cards for a recorded episode.")
+def similar(episode_dir: str, k: int = 3, root: str = ".qddot",
+            global_store: bool = False) -> dict[str, Any]:
+    try:
+        from qddot.memory.store import database_path, index_runs, search
+
+        db_path = database_path(root, global_store)
+        index_runs(Path(root) / "runs", db_path)
+        return search(Path(episode_dir), db_path, k)
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}
+
+
 # Compatibility alias makes the command intent clear to callers and tests.
 mcp = server
 

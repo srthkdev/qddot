@@ -7,10 +7,10 @@ from types import SimpleNamespace
 from qddot import mcp_server
 
 
-def test_server_lists_all_eight_tools() -> None:
+def test_server_lists_all_tools() -> None:
     tools = asyncio.run(mcp_server.server.list_tools())
     assert {item.name for item in tools} == {
-        "run", "fuzz", "why", "diff", "query", "spec", "check", "replay"
+        "run", "fuzz", "why", "diff", "query", "spec", "check", "replay", "similar"
     }
     assert all(item.description for item in tools)
 

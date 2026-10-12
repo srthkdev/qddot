@@ -17,6 +17,8 @@ COMMANDS = [
     "qddot.commands.why",
     "qddot.commands.diff",
     "qddot.commands.replay",
+    "qddot.commands.remember",
+    "qddot.commands.similar",
 ]
 
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_enable=False)

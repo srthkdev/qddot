@@ -38,6 +38,9 @@ qddot = "qddot.cli:app"
 bench = [
     "matplotlib>=3.11.2",
 ]
+memory = [
+    "fastembed>=0.9.0",
+]
 
 [tool.ruff]
 line-length = 100
