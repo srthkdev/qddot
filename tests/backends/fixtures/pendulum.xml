@@ -1,0 +1,15 @@
+<mujoco model="conformance pendulum">
+  <compiler angle="radian"/>
+  <option timestep="0.002" gravity="0 0 -9.81"/>
+  <worldbody>
+    <geom name="floor" type="plane" size="2 2 0.1" pos="0 0 -1"/>
+    <body name="link" pos="0 0 0">
+      <joint name="hinge" type="hinge" axis="0 1 0" limited="true" range="-1.5 1.5" damping="0.01"/>
+      <geom name="rod" type="capsule" fromto="0 0 0 0.5 0 0" size="0.02" mass="1"/>
+      <site name="tip" pos="0.5 0 0"/>
+    </body>
+  </worldbody>
+  <actuator>
+    <motor name="torque" joint="hinge" ctrllimited="true" ctrlrange="-2 2"/>
+  </actuator>
+</mujoco>

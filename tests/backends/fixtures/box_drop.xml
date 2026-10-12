@@ -1,0 +1,11 @@
+<mujoco model="conformance box drop">
+  <compiler angle="radian"/>
+  <option timestep="0.002" gravity="0 0 -9.81"/>
+  <worldbody>
+    <geom name="floor" type="plane" size="2 2 0.1"/>
+    <body name="box" pos="0 0 0.3">
+      <joint name="drop" type="slide" axis="0 0 1"/>
+      <geom name="box_geom" type="box" size="0.05 0.05 0.05" mass="2"/>
+    </body>
+  </worldbody>
+</mujoco>
