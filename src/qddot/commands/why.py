@@ -28,10 +28,13 @@ def _lines(result: dict[str, Any], frames: bool) -> list[str]:
                  for kind, event in first.items()]
         lines.append("first events: " + "; ".join(parts))
     causes = result.get("likely_causes", [])
-    lines.append("likely causes: " + ("; ".join(
-        f"{item['cause']} [{item['confidence']}]" for item in causes[:4]) if causes else "none"))
-    for cause in causes[:3]:
-        lines.append("  evidence: " + "; ".join(cause["evidence"]))
+    if causes:
+        # Physics shows what happened, not which line of code caused it: these are
+        # leads for the agent to confirm against the controller source.
+        lines.append("hypotheses (from physics only; confirm against the code):")
+        for cause in causes[:3]:
+            lines.append(f"  - {cause['cause']} [{cause['confidence']}]: "
+                         + "; ".join(cause["evidence"]))
     lines.extend(f"next: {command}" for command in result.get("next_commands", [])[:2])
     if frames and result.get("visual_diff"):
         for item in result["visual_diff"]:

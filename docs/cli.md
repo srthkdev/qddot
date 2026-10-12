@@ -9,7 +9,8 @@ Run `qddot --help` for the command list and `<command> --help` for option detail
 | `run TASK --controller FILE` | `--seed N` (default 0), repeatable `--perturb key=value`, `--json`; runs once and records an episode. |
 | `fuzz TASK --controller FILE` | `-n N` (default 50), `--workers W`, `--seed N`, `--json`; reports pass rate, worst five, and parameter correlation. |
 | `check MODEL` | `--json`; static physical/model setup checks. |
-| `spec TASK` | Prints each STL spec and English read-back. |
+| `init [DIR] --robot NAME_OR_PATH` | Creates a runnable project with task, starter controller, sample specs, and `.qddot/` ignored. Supports Menagerie `so101`, `ur5e`, `aloha`, MJCF `.xml`, or URDF `.urdf`; `--task NAME` sets the task name and `--assets PATH` locates vendored Menagerie files. |
+| `spec TASK` | Prints each STL spec and English read-back. `--signals` lists available signals by group; `--check "STL"` validates syntax and names; `--eval "STL" --episode ID` evaluates recorded signals. |
 | `why EPISODE` | `--frames`, `--vlm`, `--json`; failure diagnosis, optional re-simulated frames and visual diff. |
 | `diff A B` | `--tolerance FLOAT` (default `1e-6`), `--json`; compares episodes. |
 | `replay EPISODE --at T` | `--frame`, `--json`; saves integration state at T and prints joint state/contact summary. |
@@ -20,6 +21,20 @@ Run `qddot --help` for the command list and `<command> --help` for option detail
 | `similar EPISODE` | `-k N` (default 3), `--global`, `--root DIR`, `--json`; retrieves related failure cards. |
 | `skill install` | `--claude`, `--codex` (default), or `--project`; `--force` replaces an existing different installation. |
 | `mcp` | Launches the qddot MCP server over stdio. |
+
+### Initialize a project and work with specs
+
+```sh
+qddot init my_robot --robot so101
+qddot spec my_robot/task.yaml --signals
+qddot spec my_robot/task.yaml --check "always(ev.joint_limit < 0.5)"
+qddot run my_robot/task.yaml --controller my_robot/controller.py
+qddot spec my_robot/task.yaml --eval "always(ev.joint_limit < 0.5)" --episode EPISODE
+```
+
+`init` copies the Menagerie model folder to the project so local mesh and include references remain valid. Menagerie assets are present in a source checkout; pip users should pass an MJCF/URDF model path or use `--assets` with a Menagerie checkout. A URDF is copied into the project and converted to MJCF next to that copy; the converted model receives a floor, light, and position actuators for its joints when it has no actuators.
+
+`spec --check` loads the task model to discover built-in joint and actuator signals, then adds task signals, contact indicators, and event indicators. It does not run a simulation. `spec --eval` reads `signals.parquet` from the existing episode and does not re-run the controller.
 
 ## Run and diagnose
 

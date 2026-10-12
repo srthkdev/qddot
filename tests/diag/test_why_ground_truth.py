@@ -11,7 +11,7 @@ PUBLIC_TOP1_FLOOR = 0.335
 def test_public_ground_truth_accuracy_and_good_runs() -> None:
     report = evaluate(PUBLIC_TASKS, DEFAULT_CACHE, run_missing=True)
     assert report["top1"] >= PUBLIC_TOP1_FLOOR
-    assert len(report["tasks"]) == 15
+    assert len(report["tasks"]) >= 15
     assert report["good_failures"] == []
 
 

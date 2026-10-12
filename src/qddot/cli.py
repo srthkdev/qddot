@@ -8,6 +8,7 @@ COMMANDS = [
     "qddot.commands.run",
     "qddot.commands.fuzz",
     "qddot.commands.check",
+    "qddot.commands.init",
     "qddot.commands.spec",
     "qddot.commands.query",
     "qddot.commands.runs",

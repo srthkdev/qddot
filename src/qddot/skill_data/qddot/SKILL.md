@@ -8,6 +8,7 @@ description: Use qddot to run, check, and debug robot controllers, MuJoCo models
 Use this workflow whenever changing a robot controller, task, model, or physics simulation.
 
 1. **Specify:** inspect the task and model. Write or confirm measurable STL specs. Run `qddot spec TASK` and read each English back-translation.
+   Start new work with `qddot init DIR --robot so101` (or `ur5e`, `aloha`, or a model path); use `qddot spec TASK --signals` to see names and `qddot spec TASK --check "..."` to lint a formula.
 2. **Run:** run the controller and keep the episode id and verdict.
 3. **Diagnose failures:** use `qddot why EPISODE`, then query signals/events and replay near the witness time.
 4. **Fix:** change the controller or model based on evidence; rerun and compare.
@@ -21,6 +22,9 @@ Use this workflow whenever changing a robot controller, task, model, or physics 
 ```sh
 qddot check tasks/my_task/model.xml
 qddot spec tasks/my_task/task.yaml
+qddot spec tasks/my_task/task.yaml --signals
+qddot spec tasks/my_task/task.yaml --check "always(ev.joint_limit < 0.5)"
+qddot spec tasks/my_task/task.yaml --eval "always(ev.joint_limit < 0.5)" --episode EPISODE
 qddot run tasks/my_task/task.yaml --controller controller.py --seed 0
 qddot why .qddot/runs/EPISODE
 qddot query "select t, joint.elbow.pos from signals where episode='EPISODE' order by t"

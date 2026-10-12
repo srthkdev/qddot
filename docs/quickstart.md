@@ -18,6 +18,19 @@ uv run qddot check tasks/cartpole_balance/model.xml
 uv run qddot spec tasks/cartpole_balance/task.yaml
 ```
 
+To start from another robot model, scaffold a project first:
+
+```sh
+uv run qddot init my_arm --robot ur5e
+uv run qddot spec my_arm/task.yaml --signals
+uv run qddot spec my_arm/task.yaml --check "always(ev.joint_limit < 0.5)"
+uv run qddot run my_arm/task.yaml --controller my_arm/controller.py
+```
+
+`--robot` accepts the vendored `so101`, `ur5e`, or `aloha` Menagerie names, an MJCF `.xml` path, or a URDF `.urdf` path. Source checkouts include the assets. Pip users should pass a model path or a Menagerie checkout path using `--assets`. URDF conversion creates an MJCF beside the copied URDF, with a floor, light, and default position actuators when needed.
+
+Use `qddot spec TASK --eval "STL" --episode EPISODE` to evaluate a formula against an existing run's recorded signals while iterating on requirements.
+
 Example output from the current bundled task:
 
 ```text
