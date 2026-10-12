@@ -51,6 +51,7 @@ envs = [
     "verifiers>=0.1.8.post2",
 ]
 ros = [
+    "mcap-ros2-support>=0.5.7",
     "roslibpy>=2.1.0",
 ]
 genesis = [

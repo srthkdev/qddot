@@ -2551,6 +2551,18 @@ wheels = [
 ]
 
 [[package]]
+name = "mcap-ros2-support"
+version = "0.5.7"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "mcap", marker = "(platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_python_implementation == 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-qddot-genesis' and extra == 'extra-5-qddot-memory') or (sys_platform == 'darwin' and extra == 'extra-5-qddot-genesis' and extra == 'extra-5-qddot-memory') or (sys_platform == 'linux' and extra == 'extra-5-qddot-genesis' and extra == 'extra-5-qddot-memory')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/84/0d/f6da01d8e4b73861dba17fd2ebd9a78d2fd4fa582ad348cf18d16a79a7e1/mcap_ros2_support-0.5.7.tar.gz", hash = "sha256:8ddb67e452a6e2963664e29bc8868e61d7011b72feb2b62832ed444e27ca3ab8", size = 23295, upload-time = "2025-12-24T21:25:37.614Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/92/c5/8e8636099c180031436a011908a22216c25e6cb7790ba748212e203317c4/mcap_ros2_support-0.5.7-py3-none-any.whl", hash = "sha256:349f0e0f7af8ebeb516003e801ea5c5de5b4b65359ce4a17a8d98b25a9cea260", size = 22086, upload-time = "2025-12-24T21:25:36.425Z" },
+]
+
+[[package]]
 name = "mcp"
 version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4582,6 +4594,7 @@ newton = [
     { name = "newton", marker = "(platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_python_implementation == 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-qddot-genesis' and extra == 'extra-5-qddot-memory') or (sys_platform == 'darwin' and extra == 'extra-5-qddot-genesis' and extra == 'extra-5-qddot-memory') or (sys_platform == 'linux' and extra == 'extra-5-qddot-genesis' and extra == 'extra-5-qddot-memory')" },
 ]
 ros = [
+    { name = "mcap-ros2-support", marker = "(platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_python_implementation == 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-qddot-genesis' and extra == 'extra-5-qddot-memory') or (sys_platform == 'darwin' and extra == 'extra-5-qddot-genesis' and extra == 'extra-5-qddot-memory') or (sys_platform == 'linux' and extra == 'extra-5-qddot-genesis' and extra == 'extra-5-qddot-memory')" },
     { name = "roslibpy", marker = "(platform_python_implementation == 'CPython' and sys_platform == 'darwin') or (platform_python_implementation == 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-5-qddot-genesis' and extra == 'extra-5-qddot-memory') or (sys_platform == 'darwin' and extra == 'extra-5-qddot-genesis' and extra == 'extra-5-qddot-memory') or (sys_platform == 'linux' and extra == 'extra-5-qddot-genesis' and extra == 'extra-5-qddot-memory')" },
 ]
 
@@ -4599,6 +4612,7 @@ requires-dist = [
     { name = "gymnasium", marker = "extra == 'envs'", specifier = ">=1.4.0" },
     { name = "matplotlib", marker = "extra == 'bench'", specifier = ">=3.11.2" },
     { name = "mcap", specifier = ">=1.5.0" },
+    { name = "mcap-ros2-support", marker = "extra == 'ros'", specifier = ">=0.5.7" },
     { name = "mcp", specifier = ">=2.3.0" },
     { name = "mujoco", specifier = ">=3.15.0" },
     { name = "mujoco-warp", marker = "extra == 'newton'", specifier = ">=3.15.0" },

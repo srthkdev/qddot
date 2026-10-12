@@ -378,6 +378,7 @@ def why(episode_dir: str | Path, nominal_episode_dir: str | Path | None = None,
     signal_sql = '\\"' + signal_column.replace('"', '""') + '\\"'
     result["next_commands"] = [
         f"qddot query \"select t, {signal_sql} from signals where episode = '{verdict.get('episode')}' order by t limit 20\"",
-        f"qddot replay {directory} --at {witness:.3f}",
     ]
+    if not meta.get("recorded"):  # recorded logs have no simulator state to replay
+        result["next_commands"].append(f"qddot replay {directory} --at {witness:.3f}")
     return result

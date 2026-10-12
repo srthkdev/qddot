@@ -87,9 +87,13 @@ class EventDetector:
         self.active_limits = limited
 
     def saturation(self, t: float, actuator_id: int, name: str, unclipped: float, clipped: float) -> None:
-        if unclipped != clipped:
+        self.saturated(t, actuator_id, name, unclipped != clipped, abs(unclipped - clipped))
+
+    def saturated(self, t: float, actuator_id: int, name: str, active: bool, excess: float = 0.0) -> None:
+        """Emit `saturation` when an actuator enters its limit; track it until it leaves."""
+        if active:
             if actuator_id not in self.active_saturation:
-                self._emit(t, "saturation", name, None, abs(unclipped - clipped))
+                self._emit(t, "saturation", name, None, excess)
             self.active_saturation.add(actuator_id)
         else:
             self.active_saturation.discard(actuator_id)
