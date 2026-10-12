@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/brand/wordmark.svg" width="420" alt="qddot"></p>
+<p align="center"><img src="docs/brand/hero.svg" alt="qddot: run, check and debug robot code in physics"></p>
 
 # qddot (q̈, joint acceleration)
 
